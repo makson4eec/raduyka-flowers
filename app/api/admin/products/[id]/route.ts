@@ -1,6 +1,11 @@
 import { getAuthorizedAdmin, unauthorizedResponse } from "../../../../../lib/admin-auth";
 import { parseProduct } from "../../../../../lib/product-input";
-import { deleteProduct, updateProduct } from "../../../../../lib/store";
+import {
+  deleteProduct,
+  StoreNotFoundError,
+  StoreValidationError,
+  updateProduct,
+} from "../../../../../lib/store";
 import {
   assertSameOriginMutation,
   noStoreJson,
@@ -12,6 +17,16 @@ export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
 
+function storeErrorResponse(error: unknown) {
+  if (error instanceof StoreValidationError) {
+    return noStoreJson({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof StoreNotFoundError) {
+    return noStoreJson({ error: error.message }, { status: 404 });
+  }
+  return securityErrorResponse(error);
+}
+
 export async function PATCH(request: Request, context: Context) {
   if (!(await getAuthorizedAdmin())) return unauthorizedResponse();
   try {
@@ -22,11 +37,14 @@ export async function PATCH(request: Request, context: Context) {
     }
     const input = parseProduct(await readJsonBody(request, 16 * 1_024));
     if (!input.name || !input.image || input.price <= 0) {
-      return noStoreJson({ error: "Укажите название, допустимую цену и фотографию." }, { status: 400 });
+      return noStoreJson(
+        { error: "Укажите название, допустимую цену и фотографию." },
+        { status: 400 },
+      );
     }
     return noStoreJson({ product: await updateProduct(id, input) });
   } catch (error) {
-    return securityErrorResponse(error);
+    return storeErrorResponse(error);
   }
 }
 
@@ -41,6 +59,6 @@ export async function DELETE(request: Request, context: Context) {
     await deleteProduct(id);
     return noStoreJson({ ok: true });
   } catch (error) {
-    return securityErrorResponse(error);
+    return storeErrorResponse(error);
   }
 }

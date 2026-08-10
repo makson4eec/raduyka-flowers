@@ -22,10 +22,7 @@ function looksLikePlaceholder(value: string) {
 }
 
 function configuredPassword() {
-  return (
-    process.env.ADMIN_PASSWORD
-    ?? process.env.Admin_password
-  )?.trim() ?? "";
+  return process.env.ADMIN_PASSWORD?.trim() ?? "";
 }
 
 function configuredSessionSecret() {

@@ -4,6 +4,27 @@ const MAX_PRODUCT_PRICE = 10_000_000;
 const MAX_SORT_ORDER = 1_000_000;
 const STATIC_IMAGE_PATTERN = /^\/images\/[A-Za-z0-9][A-Za-z0-9._-]{0,160}\.(?:jpe?g|png|webp|svg)$/i;
 const UPLOAD_IMAGE_PATTERN = /^\/uploads\/\d{10,16}-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpe?g|png|webp)$/i;
+const PRODUCT_IMAGES_PUBLIC_PATH = "/storage/v1/object/public/product-images/";
+
+function isSupabaseProductImageUrl(value: string) {
+  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!configuredUrl) return false;
+
+  try {
+    const supabaseUrl = new URL(configuredUrl);
+    const imageUrl = new URL(value);
+
+    return (
+      imageUrl.origin === supabaseUrl.origin
+      && imageUrl.pathname.startsWith(PRODUCT_IMAGES_PUBLIC_PATH)
+      && imageUrl.pathname.length > PRODUCT_IMAGES_PUBLIC_PATH.length
+      && !imageUrl.search
+      && !imageUrl.hash
+    );
+  } catch {
+    return false;
+  }
+}
 
 function boundedInteger(value: unknown, minimum: number, maximum: number) {
   const number = Number(value);
@@ -13,7 +34,9 @@ function boundedInteger(value: unknown, minimum: number, maximum: number) {
 
 function safeImagePath(value: unknown) {
   const image = typeof value === "string" ? value.trim() : "";
-  return STATIC_IMAGE_PATTERN.test(image) || UPLOAD_IMAGE_PATTERN.test(image)
+  return STATIC_IMAGE_PATTERN.test(image)
+    || UPLOAD_IMAGE_PATTERN.test(image)
+    || isSupabaseProductImageUrl(image)
     ? image
     : "";
 }

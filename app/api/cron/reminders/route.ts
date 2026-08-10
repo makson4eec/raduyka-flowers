@@ -9,6 +9,7 @@ import type { ReminderRow } from "@/lib/reminders/types";
 import { getFirebaseAdminMessaging } from "@/lib/firebase/admin";
 import { sendFirebasePushToInstallations } from "@/lib/firebase/send";
 import { getSupabaseServiceRoleClient } from "@/lib/firebase/supabase-admin";
+import { configuredSiteOrigin } from "@/lib/site-url";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,7 +38,7 @@ function noStoreJson(body: unknown, init?: ResponseInit) {
 function isAuthorizedCronRequest(request: Request) {
   const secret = process.env.CRON_SECRET?.trim() ?? "";
   const authorization = request.headers.get("authorization") ?? "";
-  if (secret.length < 32 || !authorization) return false;
+  if (secret.length < 16 || !authorization) return false;
 
   const expected = Buffer.from(`Bearer ${secret}`);
   const actual = Buffer.from(authorization);
@@ -45,16 +46,8 @@ function isAuthorizedCronRequest(request: Request) {
 }
 
 function siteLink(request: Request) {
-  const configuredBase =
-    process.env.SITE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    new URL(request.url).origin;
-
-  try {
-    return new URL("/", configuredBase).toString();
-  } catch {
-    return new URL("/", request.url).toString();
-  }
+  const configuredBase = configuredSiteOrigin() ?? new URL(request.url).origin;
+  return new URL("/", configuredBase).toString();
 }
 
 function notificationBody(title: string, offset: 0 | 1 | 3 | 7) {

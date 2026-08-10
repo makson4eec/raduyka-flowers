@@ -747,7 +747,7 @@ export default function AdminDashboard({
                   }}
                 />
               </label>
-              <small>JPG, PNG или WebP, до 8 МБ</small>
+              <small>JPG, PNG или WebP, до 5 МБ</small>
             </div>
 
             <div className="admin-form-grid">

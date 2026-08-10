@@ -10,14 +10,28 @@ const firebaseConnectSources = [
   "https://fcmregistrations.googleapis.com",
 ];
 
+const supabaseOrigin = (() => {
+  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!configuredUrl) return null;
+
+  try {
+    return new URL(configuredUrl).origin;
+  } catch {
+    return null;
+  }
+})();
+
+const imageSources = ["'self'", "data:", "blob:", ...(supabaseOrigin ? [supabaseOrigin] : [])];
+const connectSources = ["'self'", ...firebaseConnectSources, ...(supabaseOrigin ? [supabaseOrigin] : [])];
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  `img-src ${imageSources.join(" ")}`,
   "font-src 'self' data:",
-  `connect-src 'self' ${firebaseConnectSources.join(" ")}`,
+  `connect-src ${connectSources.join(" ")}`,
   "frame-src https://yandex.ru",
   "worker-src 'self' blob:",
   "manifest-src 'self'",

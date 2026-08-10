@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "migrate:supabase": "node --env-file=.env.local scripts/migrate-store-to-supabase.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.3",

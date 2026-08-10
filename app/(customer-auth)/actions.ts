@@ -7,6 +7,7 @@ import {
   SUPABASE_NOT_CONFIGURED_MESSAGE,
 } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { configuredSiteOrigin, normalizeRequestOrigin } from "@/lib/site-url";
 
 export type CustomerAuthField =
   | "name"
@@ -79,48 +80,23 @@ function errorState(message: string): CustomerAuthState {
   return { status: "error", message };
 }
 
-function normalizeOrigin(value: string | undefined | null) {
-  if (!value) return null;
-
-  try {
-    const url = new URL(
-      value.startsWith("http://") || value.startsWith("https://")
-        ? value
-        : `https://${value}`,
-    );
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
 async function requestOrigin() {
-  const configured = normalizeOrigin(
-    process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL,
-  );
-  if (
-    configured
-    && (
-      process.env.NODE_ENV !== "production"
-      || new URL(configured).protocol === "https:"
-    )
-  ) {
-    return configured;
-  }
+  const configured = configuredSiteOrigin();
+  if (configured) return configured;
 
-  // Never build security-sensitive email links from request Host/Origin in
-  // production. Set SITE_URL to the canonical HTTPS deployment instead.
+  // In production, only explicit configuration or Vercel-provided deployment
+  // metadata may be used for security-sensitive email links.
   if (process.env.NODE_ENV === "production") return null;
 
   const requestHeaders = await headers();
-  const origin = normalizeOrigin(requestHeaders.get("origin"));
+  const origin = normalizeRequestOrigin(requestHeaders.get("origin"));
   if (origin) return origin;
 
   const forwardedHost = requestHeaders.get("x-forwarded-host");
   const host = forwardedHost ?? requestHeaders.get("host");
   if (host) {
     const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
-    const forwardedOrigin = normalizeOrigin(`${protocol}://${host}`);
+    const forwardedOrigin = normalizeRequestOrigin(`${protocol}://${host}`);
     if (forwardedOrigin) return forwardedOrigin;
   }
 
