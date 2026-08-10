@@ -1,0 +1,47 @@
+import type { ProductInput } from "./types";
+
+const MAX_PRODUCT_PRICE = 10_000_000;
+const MAX_SORT_ORDER = 1_000_000;
+const STATIC_IMAGE_PATTERN = /^\/images\/[A-Za-z0-9][A-Za-z0-9._-]{0,160}\.(?:jpe?g|png|webp|svg)$/i;
+const UPLOAD_IMAGE_PATTERN = /^\/uploads\/\d{10,16}-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpe?g|png|webp)$/i;
+
+function boundedInteger(value: unknown, minimum: number, maximum: number) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return minimum;
+  return Math.min(maximum, Math.max(minimum, Math.round(number)));
+}
+
+function safeImagePath(value: unknown) {
+  const image = typeof value === "string" ? value.trim() : "";
+  return STATIC_IMAGE_PATTERN.test(image) || UPLOAD_IMAGE_PATTERN.test(image)
+    ? image
+    : "";
+}
+
+export function parseProduct(value: unknown): ProductInput {
+  const input = value && typeof value === "object"
+    ? value as Partial<ProductInput>
+    : {};
+  const price = boundedInteger(input.price, 0, MAX_PRODUCT_PRICE);
+  const oldPriceValue = Number(input.oldPrice);
+  const allowedStocks = ["today", "few", "soon"] as const;
+  const allowedPalettes = ["pink", "white", "bright", "green"] as const;
+  return {
+    name: String(input.name ?? "").trim().slice(0, 120),
+    subtitle: String(input.subtitle ?? "").trim().slice(0, 300),
+    price: Number.isFinite(price) ? price : 0,
+    oldPrice:
+      Number.isFinite(oldPriceValue) && oldPriceValue > 0
+        ? boundedInteger(oldPriceValue, 1, MAX_PRODUCT_PRICE)
+        : undefined,
+    image: safeImagePath(input.image),
+    tag: String(input.tag ?? "").trim().slice(0, 40) || undefined,
+    stock: allowedStocks.includes(input.stock as (typeof allowedStocks)[number]) ? input.stock as ProductInput["stock"] : "today",
+    size: ["S", "M", "L"].includes(String(input.size)) ? String(input.size) : "M",
+    palette: allowedPalettes.includes(input.palette as (typeof allowedPalettes)[number]) ? input.palette as ProductInput["palette"] : "pink",
+    kind: input.kind === "builder" ? "builder" : "catalog",
+    visible: input.visible !== false,
+    featured: Boolean(input.featured),
+    sortOrder: boundedInteger(input.sortOrder, 0, MAX_SORT_ORDER),
+  };
+}

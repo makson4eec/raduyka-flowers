@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-labelledby="title description">
+  <title id="title">Цветочная композиция</title>
+  <desc id="description">Нежная цветочная композиция в круглой коробке</desc>
+  <rect width="800" height="800" fill="#f7f2e8"/>
+  <ellipse cx="400" cy="620" rx="235" ry="58" fill="#101c43" opacity=".12"/>
+  <path d="M230 430h340l-32 210c-4 29-29 50-58 50H320c-29 0-54-21-58-50Z" fill="#d92168"/>
+  <ellipse cx="400" cy="430" rx="170" ry="58" fill="#aa174e"/>
+  <g stroke="#101c43" stroke-width="7" stroke-linecap="round">
+    <path d="M400 450V245"/>
+    <path d="M354 450 290 280"/>
+    <path d="M450 450 520 270"/>
+    <path d="M320 450 220 360"/>
+    <path d="M482 450 600 355"/>
+  </g>
+  <g>
+    <circle cx="400" cy="220" r="82" fill="#c3d359"/>
+    <circle cx="290" cy="270" r="74" fill="#f0a9c0"/>
+    <circle cx="520" cy="265" r="78" fill="#fffaf1"/>
+    <circle cx="220" cy="350" r="66" fill="#d92168"/>
+    <circle cx="600" cy="345" r="68" fill="#ec9fba"/>
+    <circle cx="365" cy="350" r="72" fill="#fffaf1"/>
+    <circle cx="475" cy="365" r="70" fill="#c3d359"/>
+  </g>
+  <g fill="#101c43">
+    <circle cx="400" cy="220" r="18"/><circle cx="290" cy="270" r="16"/>
+    <circle cx="520" cy="265" r="17"/><circle cx="220" cy="350" r="15"/>
+    <circle cx="600" cy="345" r="15"/><circle cx="365" cy="350" r="16"/>
+    <circle cx="475" cy="365" r="16"/>
+  </g>
+</svg>
