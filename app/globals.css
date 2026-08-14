@@ -4176,3 +4176,328 @@ details p {
   }
 
 }
+
+/* Flowers guide */
+.category--flowers {
+  isolation: isolate;
+}
+
+.category--flowers .category-flower-mark {
+  position: absolute;
+  right: 18px;
+  bottom: -24px;
+  z-index: 1;
+  color: rgba(16, 28, 67, 0.12);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 9.5rem;
+  line-height: 1;
+  transform: rotate(-10deg);
+}
+
+.flowers-hero {
+  grid-template-columns: minmax(0, 1.3fr) minmax(230px, 0.7fr);
+}
+
+.flowers-hero__note {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 30px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(16, 28, 67, 0.18);
+  border-radius: 28px;
+}
+
+.flowers-hero__note strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(4.5rem, 9vw, 8rem);
+  font-weight: 400;
+  line-height: 0.85;
+}
+
+.flowers-hero__note span {
+  margin-top: 14px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.flowers-hero__note small {
+  max-width: 260px;
+  margin-top: 18px;
+  color: rgba(16, 28, 67, 0.68);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.flowers-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.7fr);
+  gap: 50px;
+  align-items: end;
+  margin-bottom: 34px;
+}
+
+.flowers-intro h2 {
+  max-width: 720px;
+  margin: 0;
+}
+
+.flowers-intro > p {
+  margin: 0;
+  color: rgba(16, 28, 67, 0.7);
+  line-height: 1.65;
+}
+
+.flower-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.flower-guide-card {
+  display: flex;
+  min-height: 315px;
+  flex-direction: column;
+  padding: 28px;
+  background: var(--white);
+  border: 1.5px solid var(--navy);
+  border-radius: 24px;
+}
+
+.flower-guide-card:nth-child(4n + 2),
+.flower-guide-card:nth-child(4n + 3) {
+  background: var(--blush);
+}
+
+.flower-guide-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 26px;
+}
+
+.flower-guide-card__meta span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--navy);
+  border-radius: 50%;
+  font-size: 0.78rem;
+  place-items: center;
+}
+
+.flower-guide-card__meta small {
+  color: rgba(16, 28, 67, 0.62);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.flower-guide-card h2 {
+  margin: 0 0 14px;
+  font-size: clamp(1.45rem, 2.2vw, 2rem);
+  line-height: 1.05;
+}
+
+.flower-guide-card > p {
+  margin: 0 0 26px;
+  color: rgba(16, 28, 67, 0.72);
+  line-height: 1.58;
+}
+
+.flower-guide-card details {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid rgba(16, 28, 67, 0.18);
+}
+
+.flower-guide-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.flower-guide-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.flower-guide-card summary .icon {
+  width: 22px;
+  transition: transform 180ms ease;
+}
+
+.flower-guide-card details[open] summary .icon {
+  transform: rotate(90deg);
+}
+
+.flower-guide-card ul {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 2px;
+  padding-left: 20px;
+}
+
+.flower-guide-card li {
+  color: rgba(16, 28, 67, 0.78);
+  line-height: 1.5;
+}
+
+.flowers-cta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 40px;
+  align-items: center;
+  margin-top: 42px;
+  padding: clamp(34px, 5vw, 64px);
+  background: var(--lime);
+  border-radius: 30px;
+}
+
+.flowers-cta h2 {
+  margin: 0 0 10px;
+}
+
+.flowers-cta p:last-child {
+  max-width: 680px;
+  margin-bottom: 0;
+  line-height: 1.6;
+}
+
+@media (max-width: 980px) {
+  .flower-guide-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .flowers-hero,
+  .flowers-intro,
+  .flowers-cta {
+    grid-template-columns: 1fr;
+  }
+
+  .flowers-hero__note {
+    min-height: 230px;
+  }
+
+  .flowers-intro {
+    gap: 18px;
+  }
+
+  .flower-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .flower-guide-card {
+    min-height: 0;
+  }
+
+  .flowers-cta .button {
+    width: 100%;
+  }
+}
+
+/* Цветы поштучно */
+.flower-product-grid {
+  margin-top: 28px;
+}
+
+.flower-unit-note {
+  margin: -8px 0 22px;
+  font-size: 0.9rem;
+  color: rgba(16, 39, 78, 0.62);
+}
+
+.care-text {
+  white-space: pre-line;
+}
+
+@media (max-width: 700px) {
+  .flower-product-grid {
+    margin-top: 18px;
+  }
+}
+
+.product-unit-label {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.58;
+}
+
+
+
+.variant-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.variant-option {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 96px;
+  padding: 10px;
+  text-align: left;
+  color: var(--navy);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.variant-option:hover,
+.variant-option.is-active {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 1px var(--navy) inset;
+}
+
+.variant-option img {
+  width: 76px;
+  height: 76px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--cream);
+}
+
+.variant-option span {
+  display: grid;
+  gap: 6px;
+}
+
+.variant-option b {
+  font-size: 0.98rem;
+}
+
+.variant-option small {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .variant-options {
+    grid-template-columns: 1fr;
+  }
+
+  .thumb-row {
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .thumb-row button {
+    flex: 0 0 78px;
+    width: 78px;
+    height: 78px;
+  }
+}

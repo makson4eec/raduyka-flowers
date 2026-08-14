@@ -78,6 +78,7 @@ const orderSchema = z.object({
     size: z.enum(["small", "medium", "large"]).optional(),
     addOns: z.array(z.enum(["vase", "sweet"])).max(2).optional(),
     builder: builderSchema.optional(),
+    variantId: z.string().trim().min(1).max(40).optional(),
   }).strict()).min(1).max(50),
 }).strict();
 

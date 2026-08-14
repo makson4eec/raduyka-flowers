@@ -1,5 +1,6 @@
 import { getAuthorizedAdmin, unauthorizedResponse } from "../../../../lib/admin-auth";
 import { parseProduct } from "../../../../lib/product-input";
+import { flowerVariantValidationError } from "../../../../lib/product-variants";
 import {
   createProduct,
   listProducts,
@@ -34,6 +35,10 @@ export async function POST(request: Request) {
         { error: "Укажите название, допустимую цену и фотографию." },
         { status: 400 },
       );
+    }
+    const variantError = flowerVariantValidationError(input);
+    if (variantError) {
+      return noStoreJson({ error: variantError }, { status: 400 });
     }
     return noStoreJson({ product: await createProduct(input) }, { status: 201 });
   } catch (error) {

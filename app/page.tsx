@@ -27,6 +27,13 @@ import {
   productAddOnsLabel,
   productAddOnsPrice,
 } from "../lib/order-options";
+import {
+  findProductVariant,
+  getProductVariants,
+  getVariantImage,
+  getVariantOldPrice,
+  getVariantPrice,
+} from "../lib/product-variants";
 import type {
   BouquetSize,
   BuilderSelection,
@@ -34,12 +41,14 @@ import type {
   PaymentStatus,
   Product,
   ProductAddOn,
+  ProductVariant,
   RecipientType,
 } from "../lib/types";
 
 type View =
   | "home"
   | "catalog"
+  | "flowers"
   | "builder"
   | "occasion"
   | "delivery"
@@ -57,9 +66,10 @@ type CartLine = {
   size?: BouquetSize;
   addOns?: ProductAddOn[];
   builder?: BuilderSelection;
+  variantId?: string;
 };
 
-type CatalogFilter = "Все" | "До 4 000 ₽" | "Нежные" | "Шары" | "Композиции";
+type CatalogFilter = "Все" | "Цветы" | "До 4 000 ₽" | "Нежные" | "Шары" | "Композиции";
 type LatestOrder = {
   orderNumber: string;
   total: number;
@@ -85,6 +95,7 @@ type CartConfiguration = {
   size?: BouquetSize;
   addOns?: ProductAddOn[];
   builder?: BuilderSelection;
+  variantId?: string;
 };
 
 const money = (value: number) =>
@@ -125,6 +136,10 @@ const isBalloonProduct = (product: Pick<Product, "name" | "subtitle">) =>
 const isCompositionProduct = (product: Pick<Product, "name" | "subtitle">) =>
   /композиц|корзин|ящик/iu.test(`${product.name} ${product.subtitle}`);
 
+const productDisplayName = (product: Product, variant?: Pick<ProductVariant, "label">) =>
+  variant?.label ? `${product.name} · ${variant.label}` : product.name;
+
+
 function Icon({ name }: { name: "bag" | "heart" | "user" | "search" | "menu" | "close" | "arrow" | "gift" | "plus" | "minus" | "check" }) {
   const paths: Record<string, ReactNode> = {
     bag: <><path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></>,
@@ -155,10 +170,14 @@ function ProductCard({
   onOpen: () => void;
   onAdd: () => void;
 }) {
+  const coverVariant = findProductVariant(product);
+  const coverPrice = product.kind === "flower" ? getVariantPrice(product, coverVariant) : product.price;
+  const coverOldPrice = product.kind === "flower" ? getVariantOldPrice(product, coverVariant) : product.oldPrice;
+  const needsVariantChoice = product.kind === "flower" && getProductVariants(product).length > 0;
   return (
     <article className="product-card">
       <button className="product-card__image" onClick={onOpen} aria-label={`Открыть ${product.name}`}>
-        <img src={product.image} alt={product.name} />
+        <img src={getVariantImage(product, coverVariant)} alt={product.name} />
         {publicProductTag(product.tag) && <span className="product-tag">{publicProductTag(product.tag)}</span>}
       </button>
       <button className={`heart-button ${liked ? "is-liked" : ""}`} onClick={onLike} aria-label={liked ? "Убрать из избранного" : "Добавить в избранное"}>
@@ -168,11 +187,11 @@ function ProductCard({
         <button className="product-title-button" onClick={onOpen}>{product.name}</button>
         <p>{product.subtitle}</p>
         <div className="product-card__bottom">
-          <div><strong>{money(product.price)}</strong>{product.oldPrice && <s>{money(product.oldPrice)}</s>}</div>
+          <div><strong>{money(coverPrice)}</strong>{coverOldPrice && <s>{money(coverOldPrice)}</s>}{product.kind === "flower" && <small className="product-unit-label">за 1 шт.</small>}</div>
           <button
             className="round-add"
-            onClick={onAdd}
-            aria-label={`Добавить ${product.name} в корзину`}
+            onClick={needsVariantChoice ? onOpen : onAdd}
+            aria-label={needsVariantChoice ? `Выбрать цвет ${product.name}` : `Добавить ${product.name} в корзину`}
           >
             <Icon name="plus" />
           </button>
@@ -201,6 +220,7 @@ export default function Home() {
   const [galleryImage, setGalleryImage] = useState("");
   const [selectedSize, setSelectedSize] = useState<BouquetSize>("medium");
   const [selectedProductAddOns, setSelectedProductAddOns] = useState<ProductAddOn[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState("");
   const [cardAdded, setCardAdded] = useState(false);
   const [builderStep, setBuilderStep] = useState(1);
   const [builderBudget, setBuilderBudget] = useState(5000);
@@ -221,21 +241,47 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/products", { cache: "no-store" })
-      .then(async (response) => {
+
+    const refreshProducts = async () => {
+      try {
+        const response = await fetch(`/api/products?t=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Каталог временно недоступен");
-        return response.json() as Promise<{ products?: Product[] }>;
-      })
-      .then((payload) => {
+        const payload = await response.json() as { products?: Product[] };
         if (active && Array.isArray(payload.products)) setProducts(payload.products);
-      })
-      .catch(() => {
+      } catch {
         // Статический каталог остаётся безопасным резервом при временном сбое сети.
-      });
+      }
+    };
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshProducts();
+    };
+
+    void refreshProducts();
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
     return () => {
       active = false;
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
+
+  useEffect(() => {
+    if (view !== "product") return;
+    const product = products.find((item) => item.id === selectedId);
+    if (!product || product.kind !== "flower") return;
+
+    const variants = getProductVariants(product);
+    if (!variants.length) return;
+
+    const selected = variants.find((variant) => variant.id === selectedVariantId) ?? variants[0];
+    if (selectedVariantId !== selected.id) setSelectedVariantId(selected.id);
+    if (!variants.some((variant) => variant.image === galleryImage)) {
+      setGalleryImage(selected.image);
+    }
+  }, [galleryImage, products, selectedId, selectedVariantId, view]);
 
   useEffect(() => {
     let active = true;
@@ -356,13 +402,18 @@ export default function Home() {
     setSearchOpen(true);
   };
 
-  const lineUnitPrice = (line: CartLine, product: Product) =>
-    line.builder?.budget ?? Math.max(
-      0,
-      product.price
-        + bouquetSizePriceAdjustment(line.size, product.size)
-        + productAddOnsPrice(line.addOns),
-    );
+  const lineUnitPrice = (line: CartLine, product: Product) => {
+    const variant = findProductVariant(product, line.variantId);
+    return line.builder?.budget
+      ?? (product.kind === "catalog"
+        ? Math.max(
+          0,
+          product.price
+            + bouquetSizePriceAdjustment(line.size, product.size)
+            + productAddOnsPrice(line.addOns),
+        )
+        : getVariantPrice(product, variant));
+  };
 
   const addToCart = (id: number, configuration: CartConfiguration = {}) => {
     const product = products.find((item) => item.id === id && item.visible);
@@ -383,6 +434,9 @@ export default function Home() {
     const addOns = product.kind === "catalog"
       ? [...new Set(configuration.addOns ?? [])]
       : undefined;
+    const variant = product.kind === "flower"
+      ? findProductVariant(product, configuration.variantId)
+      : undefined;
     const key = JSON.stringify({
       productId: product.id,
       size,
@@ -390,6 +444,7 @@ export default function Home() {
       builder: builder
         ? { ...builder, flowers: [...builder.flowers].sort() }
         : undefined,
+      variantId: variant?.id,
     });
 
     if ((cart.find((line) => line.key === key)?.quantity ?? 0) >= 20) {
@@ -412,9 +467,10 @@ export default function Home() {
           size,
           addOns,
           builder,
+          variantId: variant?.id,
         }];
     });
-    notify("Букет добавлен в корзину");
+    notify(product.kind === "flower" ? "Цветок добавлен в корзину" : "Букет добавлен в корзину");
     return true;
   };
 
@@ -438,8 +494,10 @@ export default function Home() {
       notify("Этот товар больше недоступен");
       return;
     }
+    const variant = findProductVariant(product);
     setSelectedId(id);
-    setGalleryImage(product.image);
+    setSelectedVariantId(variant?.id ?? "");
+    setGalleryImage(getVariantImage(product, variant));
     setSelectedSize(bouquetSizeFromProduct(product.size));
     setSelectedProductAddOns([]);
     go("product");
@@ -588,6 +646,7 @@ export default function Home() {
             size: line.size,
             addOns: line.addOns,
             builder: line.builder,
+            variantId: line.variantId,
           })),
         }),
       });
@@ -655,16 +714,25 @@ export default function Home() {
   const selectedProduct = products.find((item) => item.id === selectedId) ?? products[0] ?? defaultProducts[0];
   const selectedProductIsBalloons = isBalloonProduct(selectedProduct);
   const selectedProductIsComposition = isCompositionProduct(selectedProduct);
-  const selectedProductPrice = Math.max(
-    0,
-    selectedProduct.price
-      + (selectedProductIsBalloons ? 0 : bouquetSizePriceAdjustment(selectedSize, selectedProduct.size))
-      + productAddOnsPrice(selectedProductAddOns),
-  );
+  const selectedProductIsFlower = selectedProduct.kind === "flower";
+  const selectedVariant = findProductVariant(selectedProduct, selectedVariantId);
+  const selectedProductPrice = selectedProductIsFlower
+    ? getVariantPrice(selectedProduct, selectedVariant)
+    : Math.max(
+      0,
+      selectedProduct.price
+        + (selectedProductIsBalloons ? 0 : bouquetSizePriceAdjustment(selectedSize, selectedProduct.size))
+        + productAddOnsPrice(selectedProductAddOns),
+    );
+  const selectedProductOldPrice = selectedProductIsFlower
+    ? getVariantOldPrice(selectedProduct, selectedVariant)
+    : selectedProduct.oldPrice;
   const builderProduct = products.find((item) => item.kind === "builder");
 
   const catalogProducts = useMemo(() => {
-    let result = products.filter((item) => item.kind === "catalog" && item.stock !== "soon");
+    let result = products.filter((item) => (
+      catalogFilter === "Цветы" ? item.kind === "flower" : item.kind === "catalog"
+    ) && item.stock !== "soon");
     if (catalogFilter === "До 4 000 ₽") result = result.filter((item) => item.price <= 4000);
     if (catalogFilter === "Нежные") result = result.filter((item) => item.palette === "pink" || item.palette === "white");
     if (catalogFilter === "Шары") result = result.filter(isBalloonProduct);
@@ -674,6 +742,13 @@ export default function Home() {
     if (sort === "Сначала дороже") result = [...result].sort((a, b) => b.price - a.price);
     return result;
   }, [catalogFilter, products, sort]);
+
+  const flowerProducts = useMemo(
+    () => products
+      .filter((product) => product.kind === "flower" && product.stock !== "soon")
+      .sort((a, b) => Number(b.featured) - Number(a.featured) || a.sortOrder - b.sortOrder),
+    [products],
+  );
 
   const featuredProducts = useMemo(
     () => products
@@ -685,7 +760,7 @@ export default function Home() {
   );
   const normalizedSearch = search.trim().toLowerCase();
   const searchResults = normalizedSearch
-    ? products.filter((item) => item.kind === "catalog" && item.stock !== "soon" && `${item.name} ${item.subtitle}`.toLowerCase().includes(normalizedSearch))
+    ? products.filter((item) => item.kind !== "builder" && item.stock !== "soon" && `${item.name} ${item.subtitle}`.toLowerCase().includes(normalizedSearch))
     : [];
 
   const nav = [
@@ -733,7 +808,7 @@ export default function Home() {
 
             <section className="category-grid section-pad" aria-label="Категории">
               <button onClick={() => openCatalog()} className="category category--cream"><span>Букеты</span><Icon name="arrow" /><img src="/images/bouquet-1.png" alt="" /></button>
-              <button onClick={() => openCatalog("Нежные")} className="category category--blush"><span>Нежные<br />букеты</span><Icon name="arrow" /><img src="/images/bouquet-3.png" alt="" /></button>
+              <button onClick={() => go("flowers")} className="category category--blush category--flowers"><span>Цветы</span><Icon name="arrow" /><span className="category-flower-mark" aria-hidden="true">✿</span></button>
               <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />сегодня</span><Icon name="arrow" /><img src="/images/bouquet-2.png" alt="" /></button>
               <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><img src="/images/composition.svg" alt="" /></button>
               <button onClick={() => openCatalog("Шары")} className="category category--cream"><span>Воздушные<br />шары</span><Icon name="arrow" /><img src="/images/balloons.svg" alt="" /></button>
@@ -775,11 +850,57 @@ export default function Home() {
           </>
         )}
 
+        {view === "flowers" && (
+          <section className="section-pad page-section flowers-page">
+            <div className="page-hero page-hero--pink flowers-hero">
+              <div>
+                <p className="eyebrow">Цветы Радуйки</p>
+                <h1>Цветы поштучно</h1>
+                <p>Выберите нужный сорт, откройте карточку, посмотрите описание и рекомендации по уходу. Цена указана за одну ветку или один цветок.</p>
+              </div>
+              <div className="flowers-hero__note">
+                <strong>{flowerProducts.length}</strong>
+                <span>позиций сейчас</span>
+                <small>Фотографии и наличие можно менять из админ-панели.</small>
+              </div>
+            </div>
+
+            <div className="flowers-intro">
+              <div>
+                <p className="eyebrow">Соберите свой набор</p>
+                <h2>Добавляйте цветы прямо в корзину</h2>
+              </div>
+              <p>Количество каждого цветка можно изменить уже в корзине. Если нужной позиции нет в наличии, сотрудник может временно скрыть её через админку.</p>
+            </div>
+
+            {flowerProducts.length ? (
+              <div className="product-grid flower-product-grid">
+                {flowerProducts.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    liked={favorites.includes(product.id)}
+                    onLike={() => toggleFavorite(product.id)}
+                    onOpen={() => openProduct(product.id)}
+                    onAdd={() => addToCart(product.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <div>✿</div>
+                <h2>Цветы пока наполняются</h2>
+                <p>После запуска SQL-файла и добавления фотографий позиции появятся здесь автоматически.</p>
+              </div>
+            )}
+          </section>
+        )}
+
         {view === "catalog" && (
           <section className="section-pad page-section">
             <div className="page-hero page-hero--lime"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div>
             <div className="catalog-toolbar">
-              <div className="filter-chips">{(["Все", "До 4 000 ₽", "Нежные", "Композиции", "Шары"] as CatalogFilter[]).map((item) => <button key={item} className={catalogFilter === item ? "is-active" : ""} onClick={() => setCatalogFilter(item)}>{item}</button>)}</div>
+              <div className="filter-chips">{(["Все", "Цветы", "До 4 000 ₽", "Нежные", "Композиции", "Шары"] as CatalogFilter[]).map((item) => <button key={item} className={catalogFilter === item ? "is-active" : ""} onClick={() => setCatalogFilter(item)}>{item}</button>)}</div>
               <label>Сортировка<select value={sort} onChange={(event) => setSort(event.target.value)}><option>Популярные</option><option>Сначала дешевле</option><option>Сначала дороже</option></select></label>
             </div>
             <div className="catalog-info"><span>Найдено: {catalogProducts.length}</span><span>Цены обновляются автоматически</span></div>
@@ -795,20 +916,89 @@ export default function Home() {
           <section className="section-pad page-section product-page">
             <button className="back-link" onClick={() => go("catalog")}>← Вернуться в каталог</button>
             <div className="product-detail">
-              <div className="product-detail__gallery"><div className="product-detail__main"><img src={galleryImage || selectedProduct.image} alt={selectedProduct.name} />{publicProductTag(selectedProduct.tag) && <span className="product-tag">{publicProductTag(selectedProduct.tag)}</span>}</div><div className="thumb-row"><button className={!galleryImage || galleryImage === selectedProduct.image ? "is-active" : ""} aria-label="Показать товар" aria-pressed={!galleryImage || galleryImage === selectedProduct.image} onClick={() => setGalleryImage(selectedProduct.image)}><img src={selectedProduct.image} alt="Вид товара" /></button>{!selectedProductIsBalloons && <button className={galleryImage === "/images/florist-workshop.png" ? "is-active" : ""} aria-label="Показать процесс сборки" aria-pressed={galleryImage === "/images/florist-workshop.png"} onClick={() => setGalleryImage("/images/florist-workshop.png")}><img src="/images/florist-workshop.png" alt="Сборка флористом" /></button>}<button className="photo-note" onClick={() => notify("Фото готового заказа пришлём перед доставкой")}>Фото<br />перед<br />доставкой</button></div></div>
+              <div className="product-detail__gallery">
+                <div className="product-detail__main">
+                  <img src={galleryImage || getVariantImage(selectedProduct, selectedVariant)} alt={`${selectedProduct.name}${selectedVariant?.label ? `, ${selectedVariant.label}` : ""}`} />
+                  {publicProductTag(selectedProduct.tag) && <span className="product-tag">{publicProductTag(selectedProduct.tag)}</span>}
+                </div>
+                <div className="thumb-row">
+                  {selectedProductIsFlower && getProductVariants(selectedProduct).length > 0
+                    ? getProductVariants(selectedProduct).map((variant) => (
+                      <button
+                        key={variant.id}
+                        className={selectedVariant?.id === variant.id ? "is-active" : ""}
+                        aria-label={`Показать вариант ${variant.label}`}
+                        aria-pressed={selectedVariant?.id === variant.id}
+                        onClick={() => {
+                          setSelectedVariantId(variant.id);
+                          setGalleryImage(variant.image);
+                        }}
+                      >
+                        <img src={variant.image} alt={`${selectedProduct.name}, ${variant.label}`} />
+                      </button>
+                    ))
+                    : (
+                      <button
+                        className={!galleryImage || galleryImage === selectedProduct.image ? "is-active" : ""}
+                        aria-label="Показать товар"
+                        aria-pressed={!galleryImage || galleryImage === selectedProduct.image}
+                        onClick={() => setGalleryImage(selectedProduct.image)}
+                      >
+                        <img src={selectedProduct.image} alt="Вид товара" />
+                      </button>
+                    )}
+                  {!selectedProductIsBalloons && !selectedProductIsFlower && <button className={galleryImage === "/images/florist-workshop.png" ? "is-active" : ""} aria-label="Показать процесс сборки" aria-pressed={galleryImage === "/images/florist-workshop.png"} onClick={() => setGalleryImage("/images/florist-workshop.png")}><img src="/images/florist-workshop.png" alt="Сборка флористом" /></button>}
+                  <button className="photo-note" onClick={() => notify("Фото готового заказа пришлём перед доставкой")}>Фото<br />перед<br />доставкой</button>
+                </div>
+              </div>
               <div className="product-detail__info">
                 <h1>{selectedProduct.name}</h1><p className="product-subtitle">{selectedProduct.subtitle}</p>
-                <div className="detail-price"><strong>{money(selectedProductPrice)}</strong>{selectedProduct.oldPrice && selectedProductPrice === selectedProduct.price && <s>{money(selectedProduct.oldPrice)}</s>}</div>
-                {!selectedProductIsBalloons && <div className="detail-group"><b>{selectedProductIsComposition ? "Размер композиции" : "Размер букета"}</b><div className="size-options">{bouquetSizeOptions.map((option) => <button key={option.id} className={selectedSize === option.id ? "is-active" : ""} aria-pressed={selectedSize === option.id} onClick={() => setSelectedSize(option.id)}>{option.label}</button>)}</div></div>}
-                <div className="detail-group"><b>Добавить к заказу</b><div className="add-on-row"><button className={cardAdded ? "is-active" : ""} aria-pressed={cardAdded} onClick={() => setCardAdded((current) => !current)}>Открытка <span>+{money(cardFee)}</span></button>{productAddOnOptions.filter((option) => !selectedProductIsBalloons || option.id === "sweet").map((option) => <button key={option.id} className={selectedProductAddOns.includes(option.id) ? "is-active" : ""} aria-pressed={selectedProductAddOns.includes(option.id)} onClick={() => toggleProductAddOn(option.id)}>{option.label} <span>+{money(option.price)}</span></button>)}</div></div>
+                <div className="detail-price"><strong>{money(selectedProductPrice)}</strong>{selectedProductOldPrice && selectedProductPrice === (selectedVariant?.price ?? selectedProduct.price) && <s>{money(selectedProductOldPrice)}</s>}</div>
+                {selectedProductIsFlower && <p className="flower-unit-note">Цена за 1 ветку / цветок</p>}
+                {selectedProductIsFlower && getProductVariants(selectedProduct).length > 0 && (
+                  <div className="detail-group">
+                    <b>Выберите цвет</b>
+                    <div className="variant-options">
+                      {getProductVariants(selectedProduct).map((variant) => {
+                        const variantPrice = getVariantPrice(selectedProduct, variant);
+                        return (
+                          <button
+                            key={variant.id}
+                            className={`variant-option ${selectedVariant?.id === variant.id ? "is-active" : ""}`}
+                            aria-pressed={selectedVariant?.id === variant.id}
+                            onClick={() => {
+                              setSelectedVariantId(variant.id);
+                              setGalleryImage(variant.image);
+                            }}
+                          >
+                            <img src={variant.image} alt="" />
+                            <span><b>{variant.label}</b><small>{money(variantPrice)}</small></span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {!selectedProductIsBalloons && !selectedProductIsFlower && <div className="detail-group"><b>{selectedProductIsComposition ? "Размер композиции" : "Размер букета"}</b><div className="size-options">{bouquetSizeOptions.map((option) => <button key={option.id} className={selectedSize === option.id ? "is-active" : ""} aria-pressed={selectedSize === option.id} onClick={() => setSelectedSize(option.id)}>{option.label}</button>)}</div></div>}
+                {!selectedProductIsFlower && <div className="detail-group"><b>Добавить к заказу</b><div className="add-on-row"><button className={cardAdded ? "is-active" : ""} aria-pressed={cardAdded} onClick={() => setCardAdded((current) => !current)}>Открытка <span>+{money(cardFee)}</span></button>{productAddOnOptions.filter((option) => !selectedProductIsBalloons || option.id === "sweet").map((option) => <button key={option.id} className={selectedProductAddOns.includes(option.id) ? "is-active" : ""} aria-pressed={selectedProductAddOns.includes(option.id)} onClick={() => toggleProductAddOn(option.id)}>{option.label} <span>+{money(option.price)}</span></button>)}</div></div>}
                 <div className="delivery-inline"><span>Яндекс Доставка</span><b>Привезём по указанному адресу</b><small>Стоимость рассчитает сервис после проверки адреса</small></div>
-                <div className="detail-actions"><button className="button button--navy" onClick={() => addToCart(selectedProduct.id, { size: selectedSize, addOns: selectedProductAddOns })}>Добавить в корзину</button><button className={`favorite-large ${favorites.includes(selectedProduct.id) ? "is-liked" : ""}`} aria-label={favorites.includes(selectedProduct.id) ? "Убрать из избранного" : "Добавить в избранное"} aria-pressed={favorites.includes(selectedProduct.id)} onClick={() => toggleFavorite(selectedProduct.id)}><Icon name="heart" /></button></div>
-                <details open><summary>{selectedProductIsBalloons ? "О наборе" : "Состав и уход"}</summary><p>{selectedProductIsBalloons ? `${selectedProduct.subtitle}. Шары надуты гелием и подготовлены к вручению.` : `${selectedProduct.subtitle}. Подрежьте стебли под углом, поставьте в прохладную воду и меняйте её каждый день.`}</p></details>
-                <details><summary>{selectedProductIsBalloons ? "Важно о доставке" : "Важно о внешнем виде"}</summary><p>{selectedProductIsBalloons ? "Перевозим шары аккуратно и передаём получателю в собранном виде." : "Работаем с живыми цветами, поэтому оттенок и раскрытие бутонов могут немного отличаться. Общий характер букета сохраним."}</p></details>
+                <div className="detail-actions"><button className="button button--navy" onClick={() => addToCart(selectedProduct.id, selectedProductIsFlower ? { variantId: selectedVariant?.id } : { size: selectedSize, addOns: selectedProductAddOns })}>Добавить в корзину</button><button className={`favorite-large ${favorites.includes(selectedProduct.id) ? "is-liked" : ""}`} aria-label={favorites.includes(selectedProduct.id) ? "Убрать из избранного" : "Добавить в избранное"} aria-pressed={favorites.includes(selectedProduct.id)} onClick={() => toggleFavorite(selectedProduct.id)}><Icon name="heart" /></button></div>
+                {selectedProductIsFlower ? (
+                  <>
+                    <details open><summary>Описание</summary><p>{selectedProduct.subtitle}</p></details>
+                    <details open><summary>Как ухаживать</summary><p className="care-text">{selectedProduct.care || "Подрежьте стебель, поставьте цветок в чистую прохладную воду и регулярно меняйте её."}</p></details>
+                    <details><summary>Важно</summary><p>Цвет, размер и степень раскрытия живого цветка могут немного отличаться от фотографии. Актуальное наличие сотрудник поддерживает через админ-панель.</p></details>
+                  </>
+                ) : (
+                  <>
+                    <details open><summary>{selectedProductIsBalloons ? "О наборе" : "Состав и уход"}</summary><p>{selectedProductIsBalloons ? `${selectedProduct.subtitle}. Шары надуты гелием и подготовлены к вручению.` : `${selectedProduct.subtitle}. Подрежьте стебли под углом, поставьте в прохладную воду и меняйте её каждый день.`}</p></details>
+                    <details><summary>{selectedProductIsBalloons ? "Важно о доставке" : "Важно о внешнем виде"}</summary><p>{selectedProductIsBalloons ? "Перевозим шары аккуратно и передаём получателю в собранном виде." : "Работаем с живыми цветами, поэтому оттенок и раскрытие бутонов могут немного отличаться. Общий характер букета сохраним."}</p></details>
+                  </>
+                )}
               </div>
             </div>
             <div className="section-heading related-heading"><h2>Может понравиться</h2></div>
-            <div className="product-grid product-grid--home">{products.filter((product) => product.kind === "catalog" && product.stock !== "soon" && product.id !== selectedProduct.id).slice(0, 4).map((product) => <ProductCard key={product.id} product={product} liked={favorites.includes(product.id)} onLike={() => toggleFavorite(product.id)} onOpen={() => openProduct(product.id)} onAdd={() => addToCart(product.id)} />)}</div>
+            <div className="product-grid product-grid--home">{products.filter((product) => product.kind === (selectedProductIsFlower ? "flower" : "catalog") && product.stock !== "soon" && product.id !== selectedProduct.id).slice(0, 4).map((product) => <ProductCard key={product.id} product={product} liked={favorites.includes(product.id)} onLike={() => toggleFavorite(product.id)} onOpen={() => openProduct(product.id)} onAdd={() => addToCart(product.id)} />)}</div>
           </section>
         )}
 
@@ -920,22 +1110,23 @@ export default function Home() {
                         </article>
                       );
                     }
+                    const variant = findProductVariant(product, line.variantId);
                     const configuration = line.builder
                       ? `${line.builder.mood} · ${line.builder.flowers.join(", ")} · ${line.builder.wrap}`
-                      : [bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
+                      : [variant?.label, bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
                     return (
                       <article className="cart-line" key={line.key}>
-                        <img src={product.image} alt={product.name} />
+                        <img src={getVariantImage(product, variant)} alt={productDisplayName(product, variant)} />
                         <div className="cart-line__info">
-                          <h3>{product.name}</h3>
+                          <h3>{productDisplayName(product, variant)}</h3>
                           <p>{product.subtitle}</p>
                           <small className="cart-line__configuration">{configuration}</small>
                           <button onClick={() => setCart((current) => current.filter((item) => item.key !== line.key))}>Удалить</button>
                         </div>
                         <div className="quantity">
-                          <button aria-label={`Уменьшить количество ${product.name}`} onClick={() => updateQuantity(line.key, -1)}><Icon name="minus" /></button>
+                          <button aria-label={`Уменьшить количество ${productDisplayName(product, variant)}`} onClick={() => updateQuantity(line.key, -1)}><Icon name="minus" /></button>
                           <span>{line.quantity}</span>
-                          <button aria-label={`Увеличить количество ${product.name}`} onClick={() => updateQuantity(line.key, 1)} disabled={line.quantity >= 20}><Icon name="plus" /></button>
+                          <button aria-label={`Увеличить количество ${productDisplayName(product, variant)}`} onClick={() => updateQuantity(line.key, 1)} disabled={line.quantity >= 20}><Icon name="plus" /></button>
                         </div>
                         <strong>{money(lineUnitPrice(line, product) * line.quantity)}</strong>
                       </article>
@@ -1054,10 +1245,11 @@ export default function Home() {
                 {cart.map((line) => {
                   const product = products.find((item) => item.id === line.productId);
                   if (!product) return null;
+                  const variant = findProductVariant(product, line.variantId);
                   const configuration = line.builder
                     ? `${line.builder.mood} · ${line.builder.wrap}`
-                    : [bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
-                  return <div className="mini-line" key={line.key}><img src={product.image} alt="" /><span><b>{product.name}</b><small>{configuration}<br />{line.quantity} × {money(lineUnitPrice(line, product))}</small></span></div>;
+                    : [variant?.label, bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
+                  return <div className="mini-line" key={line.key}><img src={getVariantImage(product, variant)} alt="" /><span><b>{productDisplayName(product, variant)}</b><small>{configuration}<br />{line.quantity} × {money(lineUnitPrice(line, product))}</small></span></div>;
                 })}
                 {cardAdded && <div className="mini-line mini-line--card"><span>✎</span><span><b>Открытка</b><small>{money(cardFee)}</small></span></div>}
                 {bonus && <div className="summary-line summary-line--pink"><span>Бонусы</span><b>−{money(discount)}</b></div>}
@@ -1072,7 +1264,7 @@ export default function Home() {
 
       </main>
 
-      {view !== "success" && <footer className="site-footer section-pad"><div className="footer-top"><div><button className="brand brand--footer" onClick={() => go("home")}>РАДУЙКА</button><p>Букеты, которые говорят за вас.</p></div><div><b>Магазин</b><button onClick={() => openCatalog()}>Каталог</button><button onClick={startBuilder}>Собрать букет</button><button onClick={() => go("occasion")}>Поводы</button></div><div><b>Покупателям</b><button onClick={() => go("delivery")}>Доставка и оплата</button><button onClick={() => go("about")}>О нас</button><Link href="/account">Личный кабинет</Link></div><div><b>Мы на связи</b><a href="tel:+78000000707">8 800 000-07-07</a><a href={YANDEX_MAP_LINK} target="_blank" rel="noreferrer">{STORE_ADDRESS}</a><span>Пн–Пт: 09:00–21:00</span><span>Сб–Вс: 10:00–21:00</span></div></div><div className="footer-bottom"><span>© 2026 Радуйка</span><button onClick={() => setPrivacyOpen(true)}>Политика конфиденциальности</button><span>Визуальный прототип магазина</span></div></footer>}
+      {view !== "success" && <footer className="site-footer section-pad"><div className="footer-top"><div><button className="brand brand--footer" onClick={() => go("home")}>РАДУЙКА</button><p>Букеты, которые говорят за вас.</p></div><div><b>Магазин</b><button onClick={() => openCatalog()}>Каталог</button><button onClick={() => go("flowers")}>Цветы</button><button onClick={startBuilder}>Собрать букет</button><button onClick={() => go("occasion")}>Поводы</button></div><div><b>Покупателям</b><button onClick={() => go("delivery")}>Доставка и оплата</button><button onClick={() => go("about")}>О нас</button><Link href="/account">Личный кабинет</Link></div><div><b>Мы на связи</b><a href="tel:+78000000707">8 800 000-07-07</a><a href={YANDEX_MAP_LINK} target="_blank" rel="noreferrer">{STORE_ADDRESS}</a><span>Пн–Пт: 09:00–21:00</span><span>Сб–Вс: 10:00–21:00</span></div></div><div className="footer-bottom"><span>© 2026 Радуйка</span><button onClick={() => setPrivacyOpen(true)}>Политика конфиденциальности</button><span>Визуальный прототип магазина</span></div></footer>}
 
       {searchOpen && (
         <div className="overlay" role="dialog" aria-modal="true" aria-label="Поиск" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}>

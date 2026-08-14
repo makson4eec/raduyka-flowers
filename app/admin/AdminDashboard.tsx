@@ -7,11 +7,20 @@ import {
   cardFee as defaultCardFee,
   productAddOnsLabel,
 } from "../../lib/order-options";
+import {
+  flowerVariantValidationError,
+  getPrimaryVariant,
+  getVariantImage,
+  getVariantPrice,
+  MAX_PRODUCT_VARIANTS,
+  prepareProductForSave,
+} from "../../lib/product-variants";
 import type {
   Order,
   OrderStatus,
   PaymentStatus,
   Product,
+  ProductVariant,
 } from "../../lib/types";
 
 type Tab = "products" | "orders";
@@ -74,6 +83,7 @@ const blankProduct = (): Product => ({
   id: 0,
   name: "",
   subtitle: "",
+  care: "",
   price: 0,
   image: "/images/bouquet-1.png",
   stock: "today",
@@ -83,6 +93,19 @@ const blankProduct = (): Product => ({
   visible: true,
   featured: false,
   sortOrder: 100,
+  variants: [],
+});
+
+const blankVariant = (
+  fallbackImage = "",
+  fallbackPrice?: number,
+  fallbackOldPrice?: number,
+): ProductVariant => ({
+  id: `variant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  label: "",
+  image: fallbackImage,
+  ...(fallbackPrice && fallbackPrice > 0 ? { price: fallbackPrice } : {}),
+  ...(fallbackOldPrice && fallbackOldPrice > 0 ? { oldPrice: fallbackOldPrice } : {}),
 });
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -302,6 +325,7 @@ export default function AdminDashboard({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [draft, setDraft] = useState<Product | null>(null);
+  const [newProductPickerOpen, setNewProductPickerOpen] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState("");
@@ -447,24 +471,40 @@ export default function AdminDashboard({
   );
   const displayedOrders = orderView === "active" ? activeOrders : archivedOrders;
 
-  const openNewProduct = () => {
+  const openNewProduct = (kind: "catalog" | "flower") => {
     const nextOrder = products.reduce((max, product) => Math.max(max, product.sortOrder), 0) + 10;
-    setDraft({ ...blankProduct(), sortOrder: nextOrder });
+    const base = blankProduct();
+    setDraft({
+      ...base,
+      kind,
+      sortOrder: nextOrder,
+      variants: [],
+    });
+    setNewProductPickerOpen(false);
     setFormError("");
   };
 
   const saveProduct = async () => {
     if (!draft) return;
+
+    const validationError = flowerVariantValidationError(draft);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    const productToSave = prepareProductForSave(draft);
+
     setSavingProduct(true);
     setFormError("");
     try {
-      const editing = draft.id > 0;
+      const editing = productToSave.id > 0;
       const response = await fetch(
-        editing ? "/api/admin/products/" + draft.id : "/api/admin/products",
+        editing ? "/api/admin/products/" + productToSave.id : "/api/admin/products",
         {
           method: editing ? "PATCH" : "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(draft),
+          body: JSON.stringify(productToSave),
         },
       );
       const payload = await readJson<{ product: Product }>(response);
@@ -532,7 +572,7 @@ export default function AdminDashboard({
     }
   };
 
-  const uploadImage = async (file: File) => {
+  const uploadImage = async (file: File, variantId?: string) => {
     if (!draft) return;
     setUploading(true);
     setFormError("");
@@ -541,12 +581,75 @@ export default function AdminDashboard({
       form.set("file", file);
       const response = await fetch("/api/admin/upload", { method: "POST", body: form });
       const payload = await readJson<{ url: string }>(response);
-      setDraft((current) => current ? { ...current, image: payload.url } : current);
+      setDraft((current) => {
+        if (!current) return current;
+        if (!variantId) return { ...current, image: payload.url };
+        return {
+          ...current,
+          variants: (current.variants ?? []).map((variant) =>
+            variant.id === variantId ? { ...variant, image: payload.url } : variant,
+          ),
+        };
+      });
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : "Не удалось загрузить фотографию.");
     } finally {
       setUploading(false);
     }
+  };
+
+  const addVariant = () => {
+    setDraft((current) => {
+      if (!current) return current;
+      if ((current.variants ?? []).length >= MAX_PRODUCT_VARIANTS) {
+        setFormError(`Можно добавить не больше ${MAX_PRODUCT_VARIANTS} цветов в одну карточку.`);
+        return current;
+      }
+      const primary = getPrimaryVariant(current);
+      return {
+        ...current,
+        variants: [
+          ...(current.variants ?? []),
+          blankVariant(
+            getVariantImage(current, primary),
+            getVariantPrice(current, primary),
+            primary?.oldPrice ?? current.oldPrice,
+          ),
+        ],
+      };
+    });
+  };
+
+  const makeVariantPrimary = (variantId: string) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const variants = [...(current.variants ?? [])];
+      const index = variants.findIndex((variant) => variant.id === variantId);
+      if (index <= 0) return current;
+      const [variant] = variants.splice(index, 1);
+      variants.unshift(variant);
+      return { ...current, variants };
+    });
+  };
+
+  const updateVariant = (variantId: string, patch: Partial<ProductVariant>) => {
+    setDraft((current) => current
+      ? {
+        ...current,
+        variants: (current.variants ?? []).map((variant) =>
+          variant.id === variantId ? { ...variant, ...patch } : variant,
+        ),
+      }
+      : current);
+  };
+
+  const removeVariant = (variantId: string) => {
+    setDraft((current) => current
+      ? {
+        ...current,
+        variants: (current.variants ?? []).filter((variant) => variant.id !== variantId),
+      }
+      : current);
   };
 
   const saveOrderLocally = (updated: Order) => {
@@ -581,7 +684,7 @@ export default function AdminDashboard({
         </section>
 
         <section className="admin-stats" aria-label="Сводка">
-          <article><span>Товаров на витрине</span><strong>{products.filter((product) => product.visible && product.kind === "catalog").length}</strong></article>
+          <article><span>Товаров на витрине</span><strong>{products.filter((product) => product.visible && product.kind !== "builder").length}</strong></article>
           <article><span>Активных заказов</span><strong>{activeOrders.length}</strong></article>
           <article><span>Новых заказов</span><strong>{orders.filter((order) => order.status === "new").length}</strong></article>
         </section>
@@ -617,20 +720,27 @@ export default function AdminDashboard({
           <section className="admin-section">
             <div className="admin-section__head">
               <div><p>Управление витриной</p><h2>Товары</h2></div>
-              <button className="admin-primary" onClick={openNewProduct}>＋ Добавить товар</button>
+              <button className="admin-primary" onClick={() => setNewProductPickerOpen(true)}>＋ Добавить товар</button>
             </div>
             <div className="admin-products">
-              {products.map((product) => (
+              {products.map((product) => {
+                const primaryVariant = product.kind === "flower" ? getPrimaryVariant(product) : undefined;
+                const adminImage = getVariantImage(product, primaryVariant);
+                const adminPrice = getVariantPrice(product, primaryVariant);
+                return (
                 <article className={"admin-product " + (!product.visible ? "is-hidden" : "")} key={product.id}>
-                  <img src={product.image} alt={product.name} />
+                  <img src={adminImage} alt={product.name} />
                   <div className="admin-product__main">
                     <div className="admin-product__badges">
-                      <span>{product.kind === "builder" ? "Конструктор" : "Каталог"}</span>
+                      <span>{product.kind === "builder" ? "Конструктор" : product.kind === "flower" ? "Цветы" : "Каталог"}</span>
                       <span className={product.visible ? "is-visible" : "is-muted"}>{product.visible ? "На витрине" : "Скрыт"}</span>
                     </div>
                     <h3>{product.name}</h3>
                     <p>{product.subtitle}</p>
-                    <strong>{money(product.price)}</strong>
+                    <strong>{money(adminPrice)}</strong>
+                    {product.kind === "flower" && product.variants.length > 0 && (
+                      <small className="admin-product__variant-count">{product.variants.length} {product.variants.length === 1 ? "цвет" : product.variants.length < 5 ? "цвета" : "цветов"}</small>
+                    )}
                   </div>
                   <div className="admin-product__actions">
                     <button
@@ -658,7 +768,8 @@ export default function AdminDashboard({
                     )}
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           </section>
         ) : (
@@ -723,6 +834,30 @@ export default function AdminDashboard({
         )}
       </div>
 
+      {newProductPickerOpen && (
+        <div className="admin-modal" role="dialog" aria-modal="true" aria-label="Выбор типа товара">
+          <button className="admin-modal__backdrop" aria-label="Закрыть" onClick={() => setNewProductPickerOpen(false)} />
+          <section className="admin-product-type-picker">
+            <header>
+              <div><p>Новый товар</p><h2>Что создаём?</h2><span>Выберите тип товара. Форму можно будет заполнить сразу после выбора.</span></div>
+              <button aria-label="Закрыть" onClick={() => setNewProductPickerOpen(false)}>×</button>
+            </header>
+            <div className="admin-product-type-picker__grid">
+              <button type="button" onClick={() => openNewProduct("catalog")}>
+                <span className="admin-product-type-picker__icon">✿</span>
+                <b>Букет / композиция</b>
+                <small>Готовый букет, композиция или набор: фото, описание, цена, размер и дополнения.</small>
+              </button>
+              <button type="button" onClick={() => openNewProduct("flower")}>
+                <span className="admin-product-type-picker__icon">❀</span>
+                <b>Цветы поштучно</b>
+                <small>Один сорт цветка. Можно добавить варианты цвета, отдельные фото и отдельные цены.</small>
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {draft && (
         <div className="admin-modal" role="dialog" aria-modal="true" aria-label={draft.id ? "Редактирование товара" : "Новый товар"}>
           <button className="admin-modal__backdrop" aria-label="Закрыть" onClick={() => setDraft(null)} />
@@ -733,33 +868,142 @@ export default function AdminDashboard({
             </header>
 
             <div className="admin-image-field">
-              <img src={draft.image} alt="Предпросмотр товара" />
-              <label>
-                {uploading ? "Загружаем…" : "Загрузить свою фотографию"}
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  disabled={uploading}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.currentTarget.value = "";
-                    if (file) void uploadImage(file);
-                  }}
-                />
-              </label>
+              <img
+                src={draft.kind === "flower" && draft.variants.length > 0
+                  ? getVariantImage(draft, draft.variants[0])
+                  : draft.image}
+                alt="Предпросмотр товара"
+              />
+              {draft.kind === "flower" && draft.variants.length > 0 ? (
+                <div className="admin-image-field__variant-note">
+                  <b>Фото витрины берётся из основного цвета</b>
+                  <small>Чтобы изменить его, загрузите фото в первый цвет ниже или сделайте другой цвет основным.</small>
+                </div>
+              ) : (
+                <label>
+                  {uploading ? "Загружаем…" : "Загрузить свою фотографию"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={uploading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.currentTarget.value = "";
+                      if (file) void uploadImage(file);
+                    }}
+                  />
+                </label>
+              )}
               <small>JPG, PNG или WebP, до 5 МБ</small>
             </div>
 
             <div className="admin-form-grid">
               <label className="span-2">Название<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Например, Нежное утро" /></label>
-              <label className="span-2">Состав и описание<textarea value={draft.subtitle} onChange={(event) => setDraft({ ...draft, subtitle: event.target.value })} placeholder="Розы, эустома, эвкалипт" /></label>
-              <label>Цена, ₽<input type="number" min="0" value={draft.price || ""} onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })} /></label>
-              <label>Старая цена, ₽<input type="number" min="0" value={draft.oldPrice ?? ""} onChange={(event) => setDraft({ ...draft, oldPrice: event.target.value ? Number(event.target.value) : undefined })} /></label>
+              <label className="span-2">{draft.kind === "flower" ? "Описание цветка" : "Состав и описание"}<textarea value={draft.subtitle} onChange={(event) => setDraft({ ...draft, subtitle: event.target.value })} placeholder={draft.kind === "flower" ? "Коротко опишите сорт, форму и характер цветка" : "Розы, эустома, эвкалипт"} /></label>
+              {draft.kind === "flower" && <label className="span-2">Как ухаживать<textarea value={draft.care} onChange={(event) => setDraft({ ...draft, care: event.target.value })} placeholder="Например: обновляйте срез, меняйте воду каждый день, держите вдали от батарей" /></label>}
+              {draft.kind === "flower" && (
+                <div className="span-2 admin-variants">
+                  <div className="admin-variants__head">
+                    <div>
+                      <b>Цвета в карточке</b>
+                      <small>Добавляйте цвета здесь. Они сохраняются обычной кнопкой «Сохранить товар» и сразу становятся вариантами на сайте — Supabase вручную менять не нужно.</small>
+                    </div>
+                    <button
+                      type="button"
+                      className="admin-secondary"
+                      onClick={addVariant}
+                      disabled={draft.variants.length >= MAX_PRODUCT_VARIANTS}
+                    >
+                      + Добавить цвет
+                    </button>
+                  </div>
+                  {draft.variants.length ? (
+                    <div className="admin-variants__list">
+                      {draft.variants.map((variant, index) => (
+                        <div className="admin-variant-card" key={variant.id}>
+                          <div className="admin-variant-card__preview">
+                            <img src={variant.image || draft.image} alt={variant.label || "Вариант цвета"} />
+                            {index === 0 && <span>Основной</span>}
+                          </div>
+                          <div className="admin-variant-card__fields">
+                            <label>
+                              Цвет
+                              <input
+                                value={variant.label}
+                                onChange={(event) => updateVariant(variant.id, { label: event.target.value })}
+                                placeholder={index === 0 ? "Например, Белая" : "Например, Розовая"}
+                              />
+                            </label>
+                            <label>
+                              Цена, ₽
+                              <input
+                                type="number"
+                                min="1"
+                                value={(variant.price ?? draft.price) || ""}
+                                onChange={(event) => updateVariant(variant.id, {
+                                  price: event.target.value ? Number(event.target.value) : undefined,
+                                })}
+                              />
+                            </label>
+                            <label>
+                              Старая цена, ₽
+                              <input
+                                type="number"
+                                min="0"
+                                value={variant.oldPrice ?? ""}
+                                onChange={(event) => updateVariant(variant.id, {
+                                  oldPrice: event.target.value ? Number(event.target.value) : undefined,
+                                })}
+                              />
+                            </label>
+                            <label className="span-2 admin-variant-upload">
+                              {uploading ? "Загружаем…" : variant.image ? "Заменить фото этого цвета" : "Загрузить фото этого цвета"}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                disabled={uploading}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  event.currentTarget.value = "";
+                                  if (file) void uploadImage(file, variant.id);
+                                }}
+                              />
+                            </label>
+                          </div>
+                          <div className="admin-variant-card__actions">
+                            {index > 0 && (
+                              <button type="button" onClick={() => makeVariantPrimary(variant.id)}>Сделать основным</button>
+                            )}
+                            <button type="button" className="admin-variant-remove" onClick={() => removeVariant(variant.id)}>Удалить</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="admin-variants__empty">
+                      <p>Пока цветов нет. Товар будет работать как обычный поштучный цветок.</p>
+                      <button type="button" className="admin-secondary" onClick={addVariant}>Добавить первый цвет</button>
+                    </div>
+                  )}
+                  <small className="admin-variants__limit">До {MAX_PRODUCT_VARIANTS} цветов в одной карточке.</small>
+                </div>
+              )}
+              {draft.kind !== "flower" || draft.variants.length === 0 ? (
+                <>
+                  <label>Цена, ₽<input type="number" min="1" value={draft.price || ""} onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })} /></label>
+                  <label>Старая цена, ₽<input type="number" min="0" value={draft.oldPrice ?? ""} onChange={(event) => setDraft({ ...draft, oldPrice: event.target.value ? Number(event.target.value) : undefined })} /></label>
+                </>
+              ) : (
+                <div className="span-2 admin-variant-price-note">
+                  <b>Цена карточки берётся из основного цвета</b>
+                  <span>Сейчас: {money(getVariantPrice(draft, draft.variants[0]))}. Для разных цветов меняйте цены прямо в блоках выше.</span>
+                </div>
+              )}
               <label>Ярлык<input value={draft.tag ?? ""} onChange={(event) => setDraft({ ...draft, tag: event.target.value || undefined })} placeholder="Хит или Новинка" /></label>
               <label>Наличие<select value={draft.stock} onChange={(event) => setDraft({ ...draft, stock: event.target.value as Product["stock"] })}><option value="today">В наличии сегодня</option><option value="few">Осталось мало</option><option value="soon">Скоро поступит</option></select></label>
-              <label>Размер<select value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })}><option value="S">25–30 см</option><option value="M">35–40 см</option><option value="L">45–50 см</option></select></label>
+              {draft.kind !== "flower" && <label>Размер<select value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })}><option value="S">25–30 см</option><option value="M">35–40 см</option><option value="L">45–50 см</option></select></label>}
               <label>Палитра<select value={draft.palette} onChange={(event) => setDraft({ ...draft, palette: event.target.value as Product["palette"] })}><option value="pink">Розовая</option><option value="white">Светлая</option><option value="bright">Яркая</option><option value="green">Зелёная</option></select></label>
-              <label>Раздел<select value={draft.kind} onChange={(event) => setDraft({ ...draft, kind: event.target.value as Product["kind"] })}><option value="catalog">Каталог</option><option value="builder">Конструктор</option></select></label>
+              <label>Тип товара<select value={draft.kind} onChange={(event) => { const nextKind = event.target.value as Product["kind"]; setDraft({ ...draft, kind: nextKind }); }}><option value="catalog">Букет / композиция</option><option value="flower">Цветы поштучно</option>{draft.kind === "builder" && <option value="builder">Конструктор</option>}</select></label>
               <label>Порядок<input type="number" min="0" value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} /></label>
               <label className="admin-check"><input type="checkbox" checked={draft.visible} onChange={(event) => setDraft({ ...draft, visible: event.target.checked })} /><span><b>Показывать на витрине</b><small>Можно сохранить товар скрытым</small></span></label>
               <label className="admin-check"><input type="checkbox" checked={draft.featured} onChange={(event) => setDraft({ ...draft, featured: event.target.checked })} /><span><b>Популярный товар</b><small>Для будущих подборок</small></span></label>

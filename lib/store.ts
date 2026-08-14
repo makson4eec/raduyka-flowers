@@ -28,6 +28,7 @@ import type {
   Product,
   ProductAddOn,
   ProductInput,
+  ProductVariant,
 } from "./types";
 
 type StoredOrder = Order & {
@@ -53,6 +54,7 @@ type ProductRow = {
   id: number;
   name: string;
   subtitle: string;
+  care: string;
   price: number;
   old_price: number | null;
   image: string;
@@ -64,6 +66,7 @@ type ProductRow = {
   visible: boolean;
   featured: boolean;
   sort_order: number;
+  variants: unknown;
 };
 
 type OrderRow = {
@@ -129,11 +132,30 @@ function db() {
   return client;
 }
 
+function normalizeVariants(value: unknown): ProductVariant[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is ProductVariant => Boolean(item) && typeof item === "object")
+    .map((item) => ({
+      id: String(item.id ?? "").trim(),
+      label: String(item.label ?? "").trim(),
+      image: String(item.image ?? "").trim(),
+      ...(typeof item.price === "number" && Number.isFinite(item.price) && item.price > 0
+        ? { price: Math.round(item.price) }
+        : {}),
+      ...(typeof item.oldPrice === "number" && Number.isFinite(item.oldPrice) && item.oldPrice > 0
+        ? { oldPrice: Math.round(item.oldPrice) }
+        : {}),
+    }))
+    .filter((item) => item.id && item.label && item.image);
+}
+
 function productFromRow(row: ProductRow): Product {
   return {
     id: Number(row.id),
     name: row.name,
     subtitle: row.subtitle,
+    care: row.care ?? "",
     price: Number(row.price),
     ...(row.old_price === null ? {} : { oldPrice: Number(row.old_price) }),
     image: row.image,
@@ -145,6 +167,7 @@ function productFromRow(row: ProductRow): Product {
     visible: row.visible,
     featured: row.featured,
     sortOrder: Number(row.sort_order),
+    variants: normalizeVariants(row.variants),
   };
 }
 
@@ -152,6 +175,7 @@ function productToRow(input: ProductInput) {
   return {
     name: input.name,
     subtitle: input.subtitle,
+    care: input.care,
     price: input.price,
     old_price: input.oldPrice ?? null,
     image: input.image,
@@ -163,6 +187,7 @@ function productToRow(input: ProductInput) {
     visible: input.visible,
     featured: input.featured,
     sort_order: input.sortOrder,
+    variants: input.variants,
     updated_at: new Date().toISOString(),
   };
 }
@@ -262,7 +287,7 @@ function cloneOrder(order: StoredOrder): Order {
 export async function listProducts(includeHidden = false): Promise<Product[]> {
   let query = db()
     .from("products")
-    .select("id,name,subtitle,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order")
+    .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
     .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
 
@@ -288,7 +313,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
     const { data, error } = await client
       .from("products")
       .insert({ id: nextId, ...productToRow(input) })
-      .select("id,name,subtitle,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order")
+      .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
       .single();
 
     if (!error && data) return productFromRow(data as ProductRow);
@@ -303,7 +328,7 @@ export async function updateProduct(id: number, input: ProductInput): Promise<Pr
     .from("products")
     .update(productToRow(input))
     .eq("id", id)
-    .select("id,name,subtitle,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order")
+    .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
     .maybeSingle();
 
   if (error) throw error;
@@ -420,7 +445,7 @@ export async function createOrder(
 
     const { data: productRows, error: productError } = await db()
       .from("products")
-      .select("id,name,subtitle,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order")
+      .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
       .in("id", requestedIds);
     if (productError) throw productError;
 
@@ -437,6 +462,7 @@ export async function createOrder(
       size?: BouquetSize;
       addOns?: ProductAddOn[];
       builder?: BuilderSelection;
+      variant?: ProductVariant;
     };
 
     const lines = new Map<string, NormalizedLine>();
@@ -461,17 +487,30 @@ export async function createOrder(
       const builder = product.kind === "builder"
         ? normalizeBuilderSelection(line.builder)
         : undefined;
-      const key = JSON.stringify({ productId, size, addOns, builder });
+      let variant: ProductVariant | undefined;
+      if (product.kind === "flower" && product.variants.length > 0) {
+        if (line.variantId) {
+          variant = product.variants.find((item) => item.id === String(line.variantId));
+          if (!variant) {
+            throw new StoreValidationError("Выбранный цвет больше недоступен. Обновите карточку товара и выберите цвет снова.");
+          }
+        } else if (product.variants.length === 1) {
+          variant = product.variants[0];
+        } else {
+          throw new StoreValidationError("Выберите цвет для цветка.");
+        }
+      }
+      const key = JSON.stringify({ productId, size, addOns, builder, variantId: variant?.id });
       const existing = lines.get(key);
       if (existing) {
         if (existing.quantity + quantity > 20) {
           throw new StoreValidationError(
-            "Одного варианта букета можно заказать не больше 20 штук.",
+            "Одной конфигурации товара можно заказать не больше 20 штук.",
           );
         }
         existing.quantity += quantity;
       } else {
-        lines.set(key, { product, quantity, size, addOns, builder });
+        lines.set(key, { product, quantity, size, addOns, builder, variant });
       }
     }
 
@@ -479,19 +518,23 @@ export async function createOrder(
 
     const items: OrderItem[] = [...lines.values()].map((line) => ({
       productId: line.product.id,
-      name: line.product.name,
-      image: line.product.image,
+      name: line.variant ? `${line.product.name} · ${line.variant.label}` : line.product.name,
+      image: line.variant?.image ?? line.product.image,
       price: line.builder?.budget
-        ?? Math.max(
-          0,
-          line.product.price
-            + bouquetSizePriceAdjustment(line.size, line.product.size)
-            + productAddOnsPrice(line.addOns),
-        ),
+        ?? (line.product.kind === "catalog"
+          ? Math.max(
+            0,
+            line.product.price
+              + bouquetSizePriceAdjustment(line.size, line.product.size)
+              + productAddOnsPrice(line.addOns),
+          )
+          : line.variant?.price ?? line.product.price),
       quantity: line.quantity,
       size: line.size,
       addOns: line.addOns,
       builder: line.builder,
+      variantId: line.variant?.id,
+      variantLabel: line.variant?.label,
     }));
 
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);

@@ -1,6 +1,6 @@
 export type ProductStock = "today" | "few" | "soon";
 export type ProductPalette = "pink" | "white" | "bright" | "green";
-export type ProductKind = "catalog" | "builder";
+export type ProductKind = "catalog" | "flower" | "builder";
 export type BouquetSize = "small" | "medium" | "large";
 export type ProductAddOn = "vase" | "sweet";
 export type RecipientType = "self" | "other";
@@ -12,10 +12,19 @@ export type BuilderSelection = {
   wrap: string;
 };
 
+export type ProductVariant = {
+  id: string;
+  label: string;
+  image: string;
+  price?: number;
+  oldPrice?: number;
+};
+
 export type Product = {
   id: number;
   name: string;
   subtitle: string;
+  care: string;
   price: number;
   oldPrice?: number;
   image: string;
@@ -27,6 +36,7 @@ export type Product = {
   visible: boolean;
   featured: boolean;
   sortOrder: number;
+  variants: ProductVariant[];
 };
 
 export type ProductInput = Omit<Product, "id">;
@@ -55,6 +65,8 @@ export type OrderItem = {
   size?: BouquetSize;
   addOns?: ProductAddOn[];
   builder?: BuilderSelection;
+  variantId?: string;
+  variantLabel?: string;
 };
 
 export type Order = {
@@ -107,5 +119,6 @@ export type CreateOrderInput = {
     size?: BouquetSize;
     addOns?: ProductAddOn[];
     builder?: BuilderSelection;
+    variantId?: string;
   }>;
 };
