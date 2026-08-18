@@ -8,12 +8,14 @@ import {
 } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { configuredSiteOrigin, normalizeRequestOrigin } from "@/lib/site-url";
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal";
 
 export type CustomerAuthField =
   | "name"
   | "email"
   | "password"
-  | "passwordConfirmation";
+  | "passwordConfirmation"
+  | "personalDataConsent";
 
 export type CustomerAuthState = {
   status: "idle" | "error" | "success";
@@ -43,6 +45,9 @@ const registerSchema = z
     email: emailField,
     password: passwordField,
     passwordConfirmation: z.string(),
+    personalDataConsent: z.literal("on", {
+      error: "Нужно дать отдельное согласие на обработку персональных данных",
+    }),
   })
   .refine((value) => value.password === value.passwordConfirmation, {
     message: "Пароли не совпадают",
@@ -166,6 +171,7 @@ export async function registerAction(
     email: formData.get("email"),
     password: formData.get("password"),
     passwordConfirmation: formData.get("passwordConfirmation"),
+    personalDataConsent: formData.get("personalDataConsent"),
   });
 
   if (!parsed.success) return validationState(parsed.error);
@@ -186,7 +192,11 @@ export async function registerAction(
       email: parsed.data.email,
       password: parsed.data.password,
       options: {
-        data: { name: parsed.data.name },
+        data: {
+          name: parsed.data.name,
+          personal_data_consent_version: LEGAL_DOCUMENT_VERSION,
+          personal_data_consent_at: new Date().toISOString(),
+        },
         emailRedirectTo: callbackUrl(origin, "/account"),
       },
     });

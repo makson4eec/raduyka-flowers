@@ -108,7 +108,7 @@ export const defaultProducts: Product[] = [
     subtitle: "Розы, эустома и зелень в шляпной коробке",
     care: "",
     price: 4890,
-    image: "/images/composition.svg",
+    image: "/images/composition-roses.png",
     tag: "Новинка",
     stock: "today",
     size: "M",

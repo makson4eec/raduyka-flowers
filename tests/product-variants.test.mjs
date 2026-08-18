@@ -51,6 +51,16 @@ test("не сохраняет цветовые варианты у обычно�
   assert.deepEqual(product.variants, []);
 });
 
+test("сохраняет выбранную в админ-панели категорию композиции", () => {
+  const product = parseProduct({
+    ...baseProduct,
+    kind: "catalog",
+    catalogCategory: "composition",
+  });
+
+  assert.equal(product.catalogCategory, "composition");
+});
+
 test("основной цвет становится фото и ценой карточки", () => {
   const product = prepareProductForSave({
     ...baseProduct,
@@ -99,6 +109,29 @@ test("не разрешает одинаковые названия цветов
   assert.match(error ?? "", /добавлен дважды/);
 });
 
+test("не публикует фиктивную старую цену ниже текущей", () => {
+  const product = parseProduct({
+    ...baseProduct,
+    kind: "catalog",
+    price: 500,
+    oldPrice: 400,
+  });
+
+  assert.equal(product.oldPrice, undefined);
+});
+
+test("не сохраняет старую цену варианта ниже его текущей цены", () => {
+  const product = parseProduct({
+    ...baseProduct,
+    kind: "flower",
+    variants: [
+      { id: "white", label: "Белая", image: "/images/lily-white.png", price: 300, oldPrice: 250 },
+    ],
+  });
+
+  assert.equal(product.variants[0].oldPrice, undefined);
+});
+
 test("контракт интерфейса сохраняет выбор цвета, фильтр Цветы и выбор типа товара", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const admin = await readFile(new URL("../app/admin/AdminDashboard.tsx", import.meta.url), "utf8");
@@ -109,11 +142,13 @@ test("контракт интерфейса сохраняет выбор цве
   assert.match(page, /variantId: line\.variantId/);
   assert.match(page, /"Все", "Цветы", "До 4 000 ₽"/);
   assert.match(page, /catalogFilter === "Цветы" \? item\.kind === "flower"/);
+  assert.match(page, /product\.catalogCategory === "composition"/);
   assert.match(page, /window\.addEventListener\("focus", refreshWhenVisible\)/);
   assert.doesNotMatch(page, /publicFlowerName/);
 
   assert.match(admin, /Что создаём\?/);
-  assert.match(admin, /openNewProduct\("catalog"\)/);
+  assert.match(admin, /openNewProduct\("catalog", "bouquet"\)/);
+  assert.match(admin, /openNewProduct\("catalog", "composition"\)/);
   assert.match(admin, /openNewProduct\("flower"\)/);
   assert.match(admin, /prepareProductForSave\(draft\)/);
   assert.match(admin, /Сделать основным/);

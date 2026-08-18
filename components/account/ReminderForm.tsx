@@ -200,7 +200,7 @@ export default function ReminderForm({ reminder, onCancel, onSaved }: ReminderFo
         </fieldset>
       </div>
 
-      <p className="reminder-repeat-note">Событие будет повторяться ежегодно автоматически.</p>
+      <p className="reminder-repeat-note">Событие будет повторяться ежегодно автоматически. Не указывайте в названии или имени чувствительные сведения о другом человеке.</p>
       {error && <p className="account-error" role="alert">{error}</p>}
       <div className="reminder-editor__actions">
         <button className="button button--light" type="button" onClick={onCancel} disabled={submitting}>Отмена</button>

@@ -70,6 +70,15 @@ const paymentLabels: Record<PaymentStatus, string> = {
 const money = (value: number) =>
   new Intl.NumberFormat("ru-RU").format(value) + " ₽";
 
+const formatOrderDate = (value: string) => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "Дата заказа не указана";
+  return new Date(timestamp).toLocaleString("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+};
+
 const orderItemKey = (item: Order["items"][number], index: number) =>
   JSON.stringify([
     item.productId,
@@ -84,12 +93,23 @@ const blankProduct = (): Product => ({
   name: "",
   subtitle: "",
   care: "",
+  speciesInfo: "",
+  manufacturer: "",
+  manufacturerAddress: "",
+  manufacturingPlace: "",
+  importerInfo: "",
+  shelfLife: "",
+  warrantyInfo: "",
+  safeUse: "",
+  conformityInfo: "",
+  conformityUrl: "",
   price: 0,
   image: "/images/bouquet-1.png",
   stock: "today",
   size: "M",
   palette: "pink",
   kind: "catalog",
+  catalogCategory: "bouquet",
   visible: true,
   featured: false,
   sortOrder: 100,
@@ -192,7 +212,7 @@ function OrderEditor({
             {statusLabels[order.status]}
           </span>
           <h3>{order.orderNumber}</h3>
-          <p>{new Date(order.createdAt.endsWith("Z") ? order.createdAt : order.createdAt + "Z").toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" })}</p>
+          <p>{formatOrderDate(order.createdAt)}</p>
         </div>
         <strong>{money(order.total)}</strong>
       </header>
@@ -471,12 +491,16 @@ export default function AdminDashboard({
   );
   const displayedOrders = orderView === "active" ? activeOrders : archivedOrders;
 
-  const openNewProduct = (kind: "catalog" | "flower") => {
+  const openNewProduct = (
+    kind: "catalog" | "flower",
+    catalogCategory: Product["catalogCategory"] = "bouquet",
+  ) => {
     const nextOrder = products.reduce((max, product) => Math.max(max, product.sortOrder), 0) + 10;
     const base = blankProduct();
     setDraft({
       ...base,
       kind,
+      catalogCategory,
       sortOrder: nextOrder,
       variants: [],
     });
@@ -732,7 +756,7 @@ export default function AdminDashboard({
                   <img src={adminImage} alt={product.name} />
                   <div className="admin-product__main">
                     <div className="admin-product__badges">
-                      <span>{product.kind === "builder" ? "Конструктор" : product.kind === "flower" ? "Цветы" : "Каталог"}</span>
+                      <span>{product.kind === "builder" ? "Конструктор" : product.kind === "flower" ? "Цветы" : product.catalogCategory === "composition" ? "Композиция" : "Букет"}</span>
                       <span className={product.visible ? "is-visible" : "is-muted"}>{product.visible ? "На витрине" : "Скрыт"}</span>
                     </div>
                     <h3>{product.name}</h3>
@@ -843,10 +867,15 @@ export default function AdminDashboard({
               <button aria-label="Закрыть" onClick={() => setNewProductPickerOpen(false)}>×</button>
             </header>
             <div className="admin-product-type-picker__grid">
-              <button type="button" onClick={() => openNewProduct("catalog")}>
+              <button type="button" onClick={() => openNewProduct("catalog", "bouquet")}>
                 <span className="admin-product-type-picker__icon">✿</span>
-                <b>Букет / композиция</b>
-                <small>Готовый букет, композиция или набор: фото, описание, цена, размер и дополнения.</small>
+                <b>Букет</b>
+                <small>Готовый букет: фото, состав, цена, размер и дополнения.</small>
+              </button>
+              <button type="button" onClick={() => openNewProduct("catalog", "composition")}>
+                <span className="admin-product-type-picker__icon">❋</span>
+                <b>Композиция</b>
+                <small>Композиция в коробке, корзине или вазе: фото, состав, цена и размер.</small>
               </button>
               <button type="button" onClick={() => openNewProduct("flower")}>
                 <span className="admin-product-type-picker__icon">❀</span>
@@ -901,6 +930,16 @@ export default function AdminDashboard({
               <label className="span-2">Название<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Например, Нежное утро" /></label>
               <label className="span-2">{draft.kind === "flower" ? "Описание цветка" : "Состав и описание"}<textarea value={draft.subtitle} onChange={(event) => setDraft({ ...draft, subtitle: event.target.value })} placeholder={draft.kind === "flower" ? "Коротко опишите сорт, форму и характер цветка" : "Розы, эустома, эвкалипт"} /></label>
               {draft.kind === "flower" && <label className="span-2">Как ухаживать<textarea value={draft.care} onChange={(event) => setDraft({ ...draft, care: event.target.value })} placeholder="Например: обновляйте срез, меняйте воду каждый день, держите вдали от батарей" /></label>}
+              <label className="span-2">Видовое название / видовой состав<textarea value={draft.speciesInfo ?? ""} onChange={(event) => setDraft({ ...draft, speciesInfo: event.target.value })} placeholder={draft.kind === "flower" ? "Например: Роза (Rosa), сорт Мондиаль" : "Например: роза, эустома, эвкалипт"} /><small>Для растений укажите реальное видовое название; для букета — фактический видовой состав.</small></label>
+              <label>Изготовитель<input value={draft.manufacturer ?? ""} onChange={(event) => setDraft({ ...draft, manufacturer: event.target.value })} placeholder="Наименование / ФИО" /></label>
+              <label>Адрес изготовителя<input value={draft.manufacturerAddress ?? ""} onChange={(event) => setDraft({ ...draft, manufacturerAddress: event.target.value })} placeholder="Адрес изготовителя" /></label>
+              <label className="span-2">Место изготовления<input value={draft.manufacturingPlace ?? ""} onChange={(event) => setDraft({ ...draft, manufacturingPlace: event.target.value })} placeholder="Город, страна или адрес — укажите фактические сведения" /></label>
+              <label className="span-2">Импортёр (если применимо)<textarea value={draft.importerInfo ?? ""} onChange={(event) => setDraft({ ...draft, importerInfo: event.target.value })} placeholder="Наименование и адрес импортёра" /></label>
+              <label>Срок годности / службы (если установлен)<input value={draft.shelfLife ?? ""} onChange={(event) => setDraft({ ...draft, shelfLife: event.target.value })} placeholder="Укажите только если срок установлен" /></label>
+              <label>Гарантийный срок (если установлен)<input value={draft.warrantyInfo ?? ""} onChange={(event) => setDraft({ ...draft, warrantyInfo: event.target.value })} placeholder="Укажите только если гарантия установлена" /></label>
+              <label>Сведения о соответствии (если обязательны)<input value={draft.conformityInfo ?? ""} onChange={(event) => setDraft({ ...draft, conformityInfo: event.target.value })} placeholder="Регламент / декларация / сертификат / знак" /></label>
+              <label>Ссылка на запись в реестре (если обязательна)<input type="url" value={draft.conformityUrl ?? ""} onChange={(event) => setDraft({ ...draft, conformityUrl: event.target.value })} placeholder="https://..." /><small>С 01.09.2026 при обязательном подтверждении соответствия дистанционная карточка товара должна вести на запись о сертификате/декларации в соответствующем реестре.</small></label>
+              <label className="span-2">Безопасное использование<textarea value={draft.safeUse ?? ""} onChange={(event) => setDraft({ ...draft, safeUse: event.target.value })} placeholder="Только фактические правила и предупреждения, применимые к товару" /></label>
               {draft.kind === "flower" && (
                 <div className="span-2 admin-variants">
                   <div className="admin-variants__head">
@@ -955,6 +994,7 @@ export default function AdminDashboard({
                                   oldPrice: event.target.value ? Number(event.target.value) : undefined,
                                 })}
                               />
+                              <small>Только реальная прежняя цена; она должна быть выше текущей.</small>
                             </label>
                             <label className="span-2 admin-variant-upload">
                               {uploading ? "Загружаем…" : variant.image ? "Заменить фото этого цвета" : "Загрузить фото этого цвета"}
@@ -991,7 +1031,7 @@ export default function AdminDashboard({
               {draft.kind !== "flower" || draft.variants.length === 0 ? (
                 <>
                   <label>Цена, ₽<input type="number" min="1" value={draft.price || ""} onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })} /></label>
-                  <label>Старая цена, ₽<input type="number" min="0" value={draft.oldPrice ?? ""} onChange={(event) => setDraft({ ...draft, oldPrice: event.target.value ? Number(event.target.value) : undefined })} /></label>
+                  <label>Старая цена, ₽<input type="number" min="0" value={draft.oldPrice ?? ""} onChange={(event) => setDraft({ ...draft, oldPrice: event.target.value ? Number(event.target.value) : undefined })} /><small>Указывайте только реально применявшуюся прежнюю цену; она должна быть выше текущей.</small></label>
                 </>
               ) : (
                 <div className="span-2 admin-variant-price-note">
@@ -999,11 +1039,12 @@ export default function AdminDashboard({
                   <span>Сейчас: {money(getVariantPrice(draft, draft.variants[0]))}. Для разных цветов меняйте цены прямо в блоках выше.</span>
                 </div>
               )}
-              <label>Ярлык<input value={draft.tag ?? ""} onChange={(event) => setDraft({ ...draft, tag: event.target.value || undefined })} placeholder="Хит или Новинка" /></label>
+              <label>Ярлык<input value={draft.tag ?? ""} onChange={(event) => setDraft({ ...draft, tag: event.target.value || undefined })} placeholder="Хит или Новинка" /><small>Используйте только утверждения, которые можете подтвердить фактически.</small></label>
               <label>Наличие<select value={draft.stock} onChange={(event) => setDraft({ ...draft, stock: event.target.value as Product["stock"] })}><option value="today">В наличии сегодня</option><option value="few">Осталось мало</option><option value="soon">Скоро поступит</option></select></label>
               {draft.kind !== "flower" && <label>Размер<select value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })}><option value="S">25–30 см</option><option value="M">35–40 см</option><option value="L">45–50 см</option></select></label>}
               <label>Палитра<select value={draft.palette} onChange={(event) => setDraft({ ...draft, palette: event.target.value as Product["palette"] })}><option value="pink">Розовая</option><option value="white">Светлая</option><option value="bright">Яркая</option><option value="green">Зелёная</option></select></label>
-              <label>Тип товара<select value={draft.kind} onChange={(event) => { const nextKind = event.target.value as Product["kind"]; setDraft({ ...draft, kind: nextKind }); }}><option value="catalog">Букет / композиция</option><option value="flower">Цветы поштучно</option>{draft.kind === "builder" && <option value="builder">Конструктор</option>}</select></label>
+              <label>Тип товара<select value={draft.kind} onChange={(event) => { const nextKind = event.target.value as Product["kind"]; setDraft({ ...draft, kind: nextKind }); }}><option value="catalog">Готовый товар</option><option value="flower">Цветы поштучно</option>{draft.kind === "builder" && <option value="builder">Конструктор</option>}</select></label>
+              {draft.kind === "catalog" && <label>Категория<select value={draft.catalogCategory ?? "bouquet"} onChange={(event) => setDraft({ ...draft, catalogCategory: event.target.value as NonNullable<Product["catalogCategory"]> })}><option value="bouquet">Букет</option><option value="composition">Композиция</option></select></label>}
               <label>Порядок<input type="number" min="0" value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} /></label>
               <label className="admin-check"><input type="checkbox" checked={draft.visible} onChange={(event) => setDraft({ ...draft, visible: event.target.checked })} /><span><b>Показывать на витрине</b><small>Можно сохранить товар скрытым</small></span></label>
               <label className="admin-check"><input type="checkbox" checked={draft.featured} onChange={(event) => setDraft({ ...draft, featured: event.target.checked })} /><span><b>Популярный товар</b><small>Для будущих подборок</small></span></label>

@@ -1,12 +1,11 @@
 
-
-
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { defaultProducts } from "../lib/catalog";
+import { LEGAL_DOCUMENT_VERSION, sellerDetails } from "../lib/legal";
 import {
   BONUS_EARN_PERCENT,
   BONUS_SPEND_PERCENT,
@@ -133,8 +132,9 @@ const publicProductTag = (tag: string | undefined) =>
 const isBalloonProduct = (product: Pick<Product, "name" | "subtitle">) =>
   /(?:^|[^а-яё])шар(?:ы|ов|а|ами)?(?:$|[^а-яё])/iu.test(`${product.name} ${product.subtitle}`);
 
-const isCompositionProduct = (product: Pick<Product, "name" | "subtitle">) =>
-  /композиц|корзин|ящик/iu.test(`${product.name} ${product.subtitle}`);
+const isCompositionProduct = (product: Pick<Product, "name" | "subtitle" | "catalogCategory">) =>
+  product.catalogCategory === "composition"
+  || /композиц|корзин|ящик/iu.test(`${product.name} ${product.subtitle}`);
 
 const productDisplayName = (product: Product, variant?: Pick<ProductVariant, "label">) =>
   variant?.label ? `${product.name} · ${variant.label}` : product.name;
@@ -172,7 +172,8 @@ function ProductCard({
 }) {
   const coverVariant = findProductVariant(product);
   const coverPrice = product.kind === "flower" ? getVariantPrice(product, coverVariant) : product.price;
-  const coverOldPrice = product.kind === "flower" ? getVariantOldPrice(product, coverVariant) : product.oldPrice;
+  const rawCoverOldPrice = product.kind === "flower" ? getVariantOldPrice(product, coverVariant) : product.oldPrice;
+  const coverOldPrice = rawCoverOldPrice && rawCoverOldPrice > coverPrice ? rawCoverOldPrice : undefined;
   const needsVariantChoice = product.kind === "flower" && getProductVariants(product).length > 0;
   return (
     <article className="product-card">
@@ -213,7 +214,6 @@ export default function Home() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [giftOpen, setGiftOpen] = useState(false);
-  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [orderStatusOpen, setOrderStatusOpen] = useState(false);
   const [orderStatusLoading, setOrderStatusLoading] = useState(false);
   const [toast, setToast] = useState("");
@@ -238,6 +238,7 @@ export default function Home() {
   const checkoutAttemptIdRef = useRef<string | null>(null);
   const latestOrderExpiresAtRef = useRef<number | null>(null);
   const [storageReady, setStorageReady] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -267,21 +268,6 @@ export default function Home() {
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
-
-  useEffect(() => {
-    if (view !== "product") return;
-    const product = products.find((item) => item.id === selectedId);
-    if (!product || product.kind !== "flower") return;
-
-    const variants = getProductVariants(product);
-    if (!variants.length) return;
-
-    const selected = variants.find((variant) => variant.id === selectedVariantId) ?? variants[0];
-    if (selectedVariantId !== selected.id) setSelectedVariantId(selected.id);
-    if (!variants.some((variant) => variant.image === galleryImage)) {
-      setGalleryImage(selected.image);
-    }
-  }, [galleryImage, products, selectedId, selectedVariantId, view]);
 
   useEffect(() => {
     let active = true;
@@ -372,18 +358,17 @@ export default function Home() {
   }, [favorites, latestOrder, storageReady]);
 
   useEffect(() => {
-    if (!searchOpen && !giftOpen && !privacyOpen && !orderStatusOpen && !mobileOpen) return;
+    if (!searchOpen && !giftOpen && !orderStatusOpen && !mobileOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setSearchOpen(false);
       setGiftOpen(false);
-      setPrivacyOpen(false);
       setOrderStatusOpen(false);
       setMobileOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [giftOpen, mobileOpen, orderStatusOpen, privacyOpen, searchOpen]);
+  }, [giftOpen, mobileOpen, orderStatusOpen, searchOpen]);
 
   const go = (next: View) => {
     setView(next);
@@ -640,6 +625,8 @@ export default function Home() {
           cardText: String(form.get("cardText") ?? ""),
           useBonus: bonus,
           cardAdded,
+          offerAccepted: form.get("offerAccepted") === "on",
+          offerVersion: LEGAL_DOCUMENT_VERSION,
           items: cart.map((line) => ({
             productId: line.productId,
             quantity: line.quantity,
@@ -716,6 +703,18 @@ export default function Home() {
   const selectedProductIsComposition = isCompositionProduct(selectedProduct);
   const selectedProductIsFlower = selectedProduct.kind === "flower";
   const selectedVariant = findProductVariant(selectedProduct, selectedVariantId);
+  const selectedProductVariants = selectedProductIsFlower
+    ? getProductVariants(selectedProduct)
+    : [];
+  const displayedGalleryImage = selectedProductIsFlower
+    ? (
+      selectedProductVariants.some((variant) => variant.image === galleryImage)
+        ? galleryImage
+        : getVariantImage(selectedProduct, selectedVariant)
+    )
+    : (
+      galleryImage || getVariantImage(selectedProduct, selectedVariant)
+    );
   const selectedProductPrice = selectedProductIsFlower
     ? getVariantPrice(selectedProduct, selectedVariant)
     : Math.max(
@@ -724,9 +723,12 @@ export default function Home() {
         + (selectedProductIsBalloons ? 0 : bouquetSizePriceAdjustment(selectedSize, selectedProduct.size))
         + productAddOnsPrice(selectedProductAddOns),
     );
-  const selectedProductOldPrice = selectedProductIsFlower
+  const rawSelectedProductOldPrice = selectedProductIsFlower
     ? getVariantOldPrice(selectedProduct, selectedVariant)
     : selectedProduct.oldPrice;
+  const selectedProductOldPrice = rawSelectedProductOldPrice && rawSelectedProductOldPrice > selectedProductPrice
+    ? rawSelectedProductOldPrice
+    : undefined;
   const builderProduct = products.find((item) => item.kind === "builder");
 
   const catalogProducts = useMemo(() => {
@@ -794,30 +796,30 @@ export default function Home() {
           <>
             <section className="hero section-pad">
               <div className="hero__copy">
-                <p className="eyebrow">Свежие цветы каждый день</p>
+                <p className="eyebrow">Цветы для важных моментов</p>
                 <h1>Букеты, которые<br />говорят за вас</h1>
-                <p className="hero__lead">Соберём авторский букет и доставим сегодня — свежо, бережно и точно ко времени.</p>
+                <p className="hero__lead">Соберём авторский букет и согласуем доступные условия и время доставки до оплаты.</p>
                 <div className="hero__actions">
                   <button className="button button--navy" onClick={() => openCatalog()}>Выбрать букет</button>
                   <button className="button button--light" onClick={startBuilder}>Собрать свой</button>
                 </div>
-                <div className="hero__facts"><span>★ 4,9 по 620 отзывам</span><span>от 60 минут</span></div>
+                <div className="hero__facts"><span>Подтверждаем состав заказа</span><span>Доставка по согласованию</span></div>
               </div>
               <div className="hero__image"><img src="/images/hero-bouquet.png" alt="Яркий авторский букет Радуйки" /></div>
             </section>
 
             <section className="category-grid section-pad" aria-label="Категории">
               <button onClick={() => openCatalog()} className="category category--cream"><span>Букеты</span><Icon name="arrow" /><img src="/images/bouquet-1.png" alt="" /></button>
-              <button onClick={() => go("flowers")} className="category category--blush category--flowers"><span>Цветы</span><Icon name="arrow" /><span className="category-flower-mark" aria-hidden="true">✿</span></button>
-              <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />сегодня</span><Icon name="arrow" /><img src="/images/bouquet-2.png" alt="" /></button>
-              <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><img src="/images/composition.svg" alt="" /></button>
+              <button onClick={() => go("flowers")} className="category category--blush"><span>Цветы</span><Icon name="arrow" /><img src="/images/flowers-lilies.png" alt="" /></button>
+              <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />по городу</span><Icon name="arrow" /><img src="/images/bouquet-2.png" alt="" /></button>
+              <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><img src="/images/composition-roses.png" alt="" /></button>
               <button onClick={() => openCatalog("Шары")} className="category category--cream"><span>Воздушные<br />шары</span><Icon name="arrow" /><img src="/images/balloons.svg" alt="" /></button>
             </section>
 
             <section className="promise-strip section-pad">
-              <div><span className="promise-icon promise-icon--lime">↝</span><b>Доставка от 60 минут</b><p>Покажем фото букета до отправки</p></div>
-              <div><span className="promise-icon promise-icon--pink">☆</span><b>Бонусы за каждый заказ</b><p>Оплачивайте до 10% и получайте 5% обратно</p></div>
-              <div><span className="promise-icon promise-icon--cream">✓</span><b>Свежесть гарантируем</b><p>Собираем каждый заказ вручную в день доставки</p></div>
+              <div><span className="promise-icon promise-icon--lime">↝</span><b>Доставка по согласованию</b><p>Стоимость и доступное время подтверждаем до оплаты</p></div>
+              <div><span className="promise-icon promise-icon--pink">☆</span><b>Бонусная программа</b><p>Условия начисления и списания опубликованы на сайте</p></div>
+              <div><span className="promise-icon promise-icon--cream">✓</span><b>Согласуем заметные изменения</b><p>Живые цветы могут отличаться оттенком и степенью раскрытия</p></div>
             </section>
 
             <section className="section-pad section-block">
@@ -829,7 +831,7 @@ export default function Home() {
 
             <section className="builder-banner section-pad">
               <div className="builder-banner__image"><img src="/images/florist-workshop.png" alt="Флорист собирает букет" /></div>
-              <div className="builder-banner__copy"><p className="eyebrow">Букет с вашим характером</p><h2>Соберите свой<br />за четыре шага</h2><p>Выберите настроение, бюджет и упаковку. Флорист подберёт самые свежие цветы и пришлёт фото перед доставкой.</p><button className="button button--navy" onClick={startBuilder}>Начать сборку</button></div>
+              <div className="builder-banner__copy"><p className="eyebrow">Букет с вашим характером</p><h2>Соберите свой<br />за четыре шага</h2><p>Выберите настроение, бюджет и упаковку. Флорист подберёт доступные цветы и согласует существенные изменения состава.</p><button className="button button--navy" onClick={startBuilder}>Начать сборку</button></div>
             </section>
 
             <section className="occasions section-pad section-block">
@@ -840,11 +842,11 @@ export default function Home() {
             </section>
 
             <section className="reviews section-pad section-block">
-              <div className="section-heading"><div><p className="eyebrow">620 тёплых историй</p><h2>Радость уже доставлена</h2></div><strong className="rating">4,9 <span>★★★★★</span></strong></div>
+              <div className="section-heading"><div><p className="eyebrow">Понятный заказ без сюрпризов</p><h2>Как мы согласуем детали</h2></div></div>
               <div className="review-grid">
-                <article><p>«Букет оказался даже красивее, чем на фото. Отправили снимок перед доставкой и привезли минута в минуту».</p><footer><b>Анна</b><span>заказ 1 августа</span></footer></article>
-                <article><p>«Собрал букет в конструкторе за пару минут. Флорист попал в настроение идеально — очень живо и не банально».</p><footer><b>Максим</b><span>заказ 28 июля</span></footer></article>
-                <article><p>«Композиция получилась очень живой и аккуратной. Всё согласовали заранее и доставили бережно».</p><footer><b>Лера</b><span>заказ 24 июля</span></footer></article>
+                <article><p>Перед оплатой подтверждаем доступность выбранных позиций и итоговые условия заказа.</p><footer><b>Состав</b><span>до оплаты</span></footer></article>
+                <article><p>Если живые цветы заметно отличаются или нужна существенная замена, согласуем её с покупателем.</p><footer><b>Замены</b><span>по согласованию</span></footer></article>
+                <article><p>Стоимость доставки, если она рассчитывается отдельно, сообщаем до направления ссылки на оплату.</p><footer><b>Доставка</b><span>прозрачная стоимость</span></footer></article>
               </div>
             </section>
           </>
@@ -852,8 +854,9 @@ export default function Home() {
 
         {view === "flowers" && (
           <section className="section-pad page-section flowers-page">
-            <div className="page-hero page-hero--pink flowers-hero">
-              <div>
+            <div className="page-hero page-hero--pink page-hero--media flowers-hero">
+              <div className="page-hero__photo"><img src="/images/flowers-lilies.png" alt="Белые лилии" /></div>
+              <div className="page-hero__content">
                 <p className="eyebrow">Цветы Радуйки</p>
                 <h1>Цветы поштучно</h1>
                 <p>Выберите нужный сорт, откройте карточку, посмотрите описание и рекомендации по уходу. Цена указана за одну ветку или один цветок.</p>
@@ -898,7 +901,7 @@ export default function Home() {
 
         {view === "catalog" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--lime"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div>
+            <div className="page-hero page-hero--lime page-hero--media"><div className="page-hero__photo"><img src="/images/hero-bouquet.png" alt="Нежный букет роз" /></div><div className="page-hero__content"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div></div>
             <div className="catalog-toolbar">
               <div className="filter-chips">{(["Все", "Цветы", "До 4 000 ₽", "Нежные", "Композиции", "Шары"] as CatalogFilter[]).map((item) => <button key={item} className={catalogFilter === item ? "is-active" : ""} onClick={() => setCatalogFilter(item)}>{item}</button>)}</div>
               <label>Сортировка<select value={sort} onChange={(event) => setSort(event.target.value)}><option>Популярные</option><option>Сначала дешевле</option><option>Сначала дороже</option></select></label>
@@ -918,7 +921,7 @@ export default function Home() {
             <div className="product-detail">
               <div className="product-detail__gallery">
                 <div className="product-detail__main">
-                  <img src={galleryImage || getVariantImage(selectedProduct, selectedVariant)} alt={`${selectedProduct.name}${selectedVariant?.label ? `, ${selectedVariant.label}` : ""}`} />
+                  <img src={displayedGalleryImage} alt={`${selectedProduct.name}${selectedVariant?.label ? `, ${selectedVariant.label}` : ""}`} />
                   {publicProductTag(selectedProduct.tag) && <span className="product-tag">{publicProductTag(selectedProduct.tag)}</span>}
                 </div>
                 <div className="thumb-row">
@@ -983,6 +986,21 @@ export default function Home() {
                 {!selectedProductIsFlower && <div className="detail-group"><b>Добавить к заказу</b><div className="add-on-row"><button className={cardAdded ? "is-active" : ""} aria-pressed={cardAdded} onClick={() => setCardAdded((current) => !current)}>Открытка <span>+{money(cardFee)}</span></button>{productAddOnOptions.filter((option) => !selectedProductIsBalloons || option.id === "sweet").map((option) => <button key={option.id} className={selectedProductAddOns.includes(option.id) ? "is-active" : ""} aria-pressed={selectedProductAddOns.includes(option.id)} onClick={() => toggleProductAddOn(option.id)}>{option.label} <span>+{money(option.price)}</span></button>)}</div></div>}
                 <div className="delivery-inline"><span>Яндекс Доставка</span><b>Привезём по указанному адресу</b><small>Стоимость рассчитает сервис после проверки адреса</small></div>
                 <div className="detail-actions"><button className="button button--navy" onClick={() => addToCart(selectedProduct.id, selectedProductIsFlower ? { variantId: selectedVariant?.id } : { size: selectedSize, addOns: selectedProductAddOns })}>Добавить в корзину</button><button className={`favorite-large ${favorites.includes(selectedProduct.id) ? "is-liked" : ""}`} aria-label={favorites.includes(selectedProduct.id) ? "Убрать из избранного" : "Добавить в избранное"} aria-pressed={favorites.includes(selectedProduct.id)} onClick={() => toggleFavorite(selectedProduct.id)}><Icon name="heart" /></button></div>
+                <details className="product-legal-info">
+                  <summary>Информация о товаре</summary>
+                  <div className="product-legal-info__grid">
+                    {selectedProduct.speciesInfo && <p><b>Видовое название / состав:</b><span>{selectedProduct.speciesInfo}</span></p>}
+                    {selectedProduct.manufacturer && <p><b>Изготовитель:</b><span>{selectedProduct.manufacturer}</span></p>}
+                    {selectedProduct.manufacturerAddress && <p><b>Адрес изготовителя:</b><span>{selectedProduct.manufacturerAddress}</span></p>}
+                    {selectedProduct.manufacturingPlace && <p><b>Место изготовления:</b><span>{selectedProduct.manufacturingPlace}</span></p>}
+                    {selectedProduct.importerInfo && <p><b>Импортёр:</b><span>{selectedProduct.importerInfo}</span></p>}
+                    {selectedProduct.shelfLife && <p><b>Срок годности / службы:</b><span>{selectedProduct.shelfLife}</span></p>}
+                    {selectedProduct.warrantyInfo && <p><b>Гарантийный срок:</b><span>{selectedProduct.warrantyInfo}</span></p>}
+                    {selectedProduct.safeUse && <p><b>Безопасное использование:</b><span>{selectedProduct.safeUse}</span></p>}
+                    {(selectedProduct.conformityInfo || selectedProduct.conformityUrl) && <p><b>Подтверждение соответствия:</b><span>{selectedProduct.conformityInfo}{selectedProduct.conformityInfo && selectedProduct.conformityUrl ? " · " : ""}{selectedProduct.conformityUrl && <a href={selectedProduct.conformityUrl} target="_blank" rel="noopener noreferrer">запись в реестре ↗</a>}</span></p>}
+                    <p><b>Продавец:</b><span>Реквизиты и контакты указаны на странице <Link href="/legal/seller" target="_blank" rel="noopener noreferrer">«Сведения о продавце»</Link>.</span></p>
+                  </div>
+                </details>
                 {selectedProductIsFlower ? (
                   <>
                     <details open><summary>Описание</summary><p>{selectedProduct.subtitle}</p></details>
@@ -1004,7 +1022,7 @@ export default function Home() {
 
         {view === "builder" && (
           <section className="section-pad page-section builder-page">
-            <div className="page-hero page-hero--pink"><p className="eyebrow">Личный флорист онлайн</p><h1>Соберите букет<br />под своё настроение</h1><p>Четыре простых шага. Финальный состав уточнит флорист и соберёт его из свежих цветов.</p></div>
+            <div className="page-hero page-hero--pink page-hero--media"><div className="page-hero__photo"><img src="/images/florist-workshop.png" alt="Авторский букет из разноцветных цветов" /></div><div className="page-hero__content"><p className="eyebrow">Личный флорист онлайн</p><h1>Соберите букет<br />под своё настроение</h1><p>Четыре простых шага. Финальный состав уточнит флорист и соберёт его из свежих цветов.</p></div></div>
             <div className="builder-layout">
               <div className="builder-card">
                 <div className="builder-progress"><span>Шаг {builderStep} из 4</span><div>{[1,2,3,4].map((step) => <i key={step} className={step <= builderStep ? "is-done" : ""} />)}</div></div>
@@ -1021,7 +1039,7 @@ export default function Home() {
 
         {view === "occasion" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--cream"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div>
+            <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><img src="/images/bouquet-1.png" alt="Яркий букет гербер" /></div><div className="page-hero__content"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div></div>
             <div className="occasion-grid">{[
               ["День рождения", "Ярко, празднично и с вау-эффектом", "01"],
               ["Для любимого человека", "Тепло, лично и без лишней слащавости", "02"],
@@ -1036,7 +1054,7 @@ export default function Home() {
 
         {view === "delivery" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--lime delivery-hero"><div><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p></div><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div>
+            <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><img src="/images/bouquet-5.png" alt="Свежие гортензии" /></div><div className="page-hero__content"><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div></div>
             <div className="delivery-grid"><article><span>01</span><h3>По тарифу сервиса</h3><strong>После адреса</strong><p>Яндекс Доставка рассчитает стоимость после проверки указанного адреса.</p></article><article><span>02</span><h3>Согласуем заранее</h3><strong>До оплаты</strong><p>Сообщим итоговую стоимость доставки вместе с подтверждением заказа.</p></article><article><span>03</span><h3>Самовывоз</h3><strong>Бесплатно</strong><p>{STORE_ADDRESS}. Сообщим, когда заказ будет готов.</p></article></div>
             <section className="studio-location" aria-labelledby="studio-location-title">
               <div className="studio-location__copy">
@@ -1050,17 +1068,25 @@ export default function Home() {
                 <a className="studio-location__link" href={YANDEX_MAP_LINK} target="_blank" rel="noreferrer">Открыть в Яндекс Картах ↗</a>
               </div>
               <div className="studio-location__map">
-                <iframe
-                  src={YANDEX_MAP_EMBED_URL}
-                  title="Радуйка на Яндекс Картах"
-                  loading="lazy"
-                  allowFullScreen
-                  referrerPolicy="no-referrer"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
+                {mapLoaded ? (
+                  <iframe
+                    src={YANDEX_MAP_EMBED_URL}
+                    title="Радуйка на Яндекс Картах"
+                    loading="lazy"
+                    allowFullScreen
+                    referrerPolicy="no-referrer"
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                  />
+                ) : (
+                  <div className="studio-location__map-consent">
+                    <b>Карта загружается с сайта Яндекса</b>
+                    <p>Чтобы не передавать технические данные стороннему сервису автоматически, карта откроется только после вашего действия.</p>
+                    <button className="button button--navy" type="button" onClick={() => setMapLoaded(true)}>Показать карту</button>
+                  </div>
+                )}
               </div>
             </section>
-            <div className="how-delivery"><div><p className="eyebrow">Как всё происходит</p><h2>От заказа до счастливого сообщения</h2></div><ol><li><span>1</span><div><b>Вы оформляете заказ</b><p>Указываете адрес и телефон получателя.</p></div></li><li><span>2</span><div><b>Флорист собирает букет</b><p>Использует свежие цветы и присылает вам фото.</p></div></li><li><span>3</span><div><b>Яндекс Доставка привозит</b><p>Курьер бережно передаёт заказ получателю.</p></div></li></ol></div>
+            <div className="how-delivery"><div><p className="eyebrow">Как всё происходит</p><h2>От оформления до передачи заказа</h2></div><ol><li><span>1</span><div><b>Вы оформляете заказ</b><p>Указываете только необходимые для исполнения заказа данные.</p></div></li><li><span>2</span><div><b>Сотрудник подтверждает условия</b><p>Проверяет состав, наличие и, при доставке, сообщает её стоимость до оплаты.</p></div></li><li><span>3</span><div><b>Заказ передаётся получателю</b><p>После подтверждения и оплаты заказ передаётся выбранным способом.</p></div></li></ol></div>
             <div className="faq"><h2>Частые вопросы</h2>{["Можно доставить, если я не знаю точный адрес?", "Получатель увидит стоимость?", "Что будет, если получателя нет на месте?"].map((item, index) => <details key={item} open={index === 0}><summary>{item}</summary><p>{index === 0 ? "Да. Укажите телефон — мы аккуратно уточним удобное место и время, не раскрывая сюрприз." : "Менеджер свяжется с вами и согласует следующий шаг. Все детали заказа остаются у отправителя."}</p></details>)}</div>
           </section>
         )}
@@ -1068,7 +1094,7 @@ export default function Home() {
         {view === "about" && (
           <section className="section-pad page-section">
             <div className="about-hero"><div><p className="eyebrow">Радость — в живых деталях</p><h1>Не копируем букеты.<br />Собираем эмоции.</h1><p>«Радуйка» — цветочная студия, где современная флористика встречается с человеческой заботой. Каждый заказ собираем вручную в день доставки.</p></div><img src="/images/florist-workshop.png" alt="Работа флориста Радуйки" /></div>
-            <div className="values-grid"><article><span>01</span><h3>Только свежие</h3><p>Получаем небольшие поставки несколько раз в неделю, поэтому цветы не залеживаются.</p></article><article><span>02</span><h3>Похоже по настроению</h3><p>Живые цветы не бывают одинаковыми. Сохраняем палитру, объём и характер выбранного букета.</p></article><article><span>03</span><h3>Честно до доставки</h3><p>Всегда показываем фото готовой работы и согласуем любые заметные изменения.</p></article></div>
+            <div className="values-grid"><article><span>01</span><h3>Живые цветы</h3><p>Оттенок, размер и степень раскрытия бутонов естественно различаются. Это учитываем при сборке.</p></article><article><span>02</span><h3>Сохраняем характер</h3><p>При допустимых природных отличиях ориентируемся на выбранную палитру, объём и общий образ букета.</p></article><article><span>03</span><h3>Согласуем существенное</h3><p>Заметные замены состава или изменение стоимости подтверждаем с покупателем до оплаты или передачи заказа.</p></article></div>
             <div className="team-note"><div className="team-note__number">12</div><div><p className="eyebrow">Флористов и курьеров</p><h2>Одна команда, которая отвечает за результат</h2><p>От первого сообщения до вручения букета у заказа есть конкретные люди, а не безымянный конвейер.</p></div><button className="button button--light" onClick={() => openCatalog()}>Выбрать букет</button></div>
           </section>
         )}
@@ -1219,7 +1245,7 @@ export default function Home() {
                     <label>Ваше имя<input name="customerName" required placeholder="Имя" /></label>
                     <label>Ваш телефон<input name="customerPhone" required inputMode="tel" placeholder="+7 999 000-00-00" /></label>
                     {cardAdded ? (
-                      <><label className="span-2">Текст для открытки<textarea name="cardText" required placeholder="Напишите несколько тёплых слов" /></label><button className="checkout-remove-card" type="button" onClick={() => setCardAdded(false)}>Убрать открытку</button></>
+                      <><label className="span-2">Текст для открытки<textarea name="cardText" required maxLength={500} placeholder="Напишите несколько тёплых слов" /><small className="legal-helper">Не указывайте сведения о здоровье, религии, политических взглядах и другие чувствительные данные.</small></label><button className="checkout-remove-card" type="button" onClick={() => setCardAdded(false)}>Убрать открытку</button></>
                     ) : (
                       <button className="checkout-add-card span-2" type="button" onClick={() => setCardAdded(true)}>＋ Добавить открытку за {money(cardFee)}</button>
                     )}
@@ -1235,6 +1261,12 @@ export default function Home() {
                     )}
                   </div>
                 </fieldset>
+                <p className="legal-helper">Для оформления и исполнения заказа магазин обработает указанные вами данные на основаниях, предусмотренных законом и договором. Подробнее: <Link href="/legal/privacy" target="_blank" rel="noopener noreferrer">Политика обработки персональных данных</Link>. Отдельное согласие не подменяет обработку, необходимую для исполнения заказа.</p>
+                <label className="legal-checkbox">
+                  <input type="checkbox" name="offerAccepted" required />
+                  <span>Я ознакомился(ась) и принимаю условия <Link href="/legal/offer" target="_blank" rel="noopener noreferrer">публичной оферты</Link>, а также <Link href="/legal/payment-delivery" target="_blank" rel="noopener noreferrer">оплаты и доставки</Link>.</span>
+                </label>
+                {recipientType === "other" && <p className="legal-helper">Передавая имя и телефон другого получателя, указывайте только сведения, необходимые для доставки, и убедитесь, что у вас есть законное основание сообщить их магазину.</p>}
                 {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
                 <button className="button button--navy button--wide" type="submit" disabled={checkoutSubmitting}>
                   {checkoutSubmitting ? "Сохраняем заказ…" : "Отправить заказ · " + money(total)}
@@ -1260,11 +1292,11 @@ export default function Home() {
           </section>
         )}
 
-        {view === "success" && <section className="success-page section-pad"><div className="success-mark"><Icon name="check" /></div><p className="eyebrow">Заказ {orderNumber || "принят"}</p><h1>Заявка уже у<br />сотрудника</h1><p>{checkoutDelivery === "delivery" ? "Сотрудник проверит состав, адрес и тариф Яндекс Доставки, затем свяжется с вами и пришлёт ссылку на оплату." : `Сотрудник проверит состав и сообщит, когда заказ будет готов к самовывозу по адресу: ${STORE_ADDRESS}.`}</p><div className="success-steps"><span className="is-active">Заказ принят</span><i /><span>Подтверждение</span><i /><span>Сборка</span></div><button className="button button--navy" onClick={() => void checkOrderStatus()}>Следить за заказом</button><button className="text-link" onClick={() => go("home")}>Вернуться на главную</button></section>}
+        {view === "success" && <section className="success-page section-pad"><div className="success-mark"><Icon name="check" /></div><p className="eyebrow">Заказ {orderNumber || "принят"}</p><h1>Заявка уже у<br />сотрудника</h1><p>{checkoutDelivery === "delivery" ? "Сотрудник проверит состав, адрес и тариф Яндекс Доставки, затем свяжется с вами и пришлёт ссылку на оплату." : `Сотрудник проверит состав и сообщит, когда заказ будет готов к самовывозу по адресу: ${STORE_ADDRESS}.`}</p><p className="legal-helper">Номер заказа подтверждает оформление. Условия дистанционной продажи доступны в <Link href="/legal/offer">публичной оферте</Link>.</p><div className="success-steps"><span className="is-active">Заказ принят</span><i /><span>Подтверждение</span><i /><span>Сборка</span></div><button className="button button--navy" onClick={() => void checkOrderStatus()}>Следить за заказом</button><button className="text-link" onClick={() => go("home")}>Вернуться на главную</button></section>}
 
       </main>
 
-      {view !== "success" && <footer className="site-footer section-pad"><div className="footer-top"><div><button className="brand brand--footer" onClick={() => go("home")}>РАДУЙКА</button><p>Букеты, которые говорят за вас.</p></div><div><b>Магазин</b><button onClick={() => openCatalog()}>Каталог</button><button onClick={() => go("flowers")}>Цветы</button><button onClick={startBuilder}>Собрать букет</button><button onClick={() => go("occasion")}>Поводы</button></div><div><b>Покупателям</b><button onClick={() => go("delivery")}>Доставка и оплата</button><button onClick={() => go("about")}>О нас</button><Link href="/account">Личный кабинет</Link></div><div><b>Мы на связи</b><a href="tel:+78000000707">8 800 000-07-07</a><a href={YANDEX_MAP_LINK} target="_blank" rel="noreferrer">{STORE_ADDRESS}</a><span>Пн–Пт: 09:00–21:00</span><span>Сб–Вс: 10:00–21:00</span></div></div><div className="footer-bottom"><span>© 2026 Радуйка</span><button onClick={() => setPrivacyOpen(true)}>Политика конфиденциальности</button><span>Визуальный прототип магазина</span></div></footer>}
+      {view !== "success" && <footer className="site-footer section-pad"><div className="footer-top"><div><button className="brand brand--footer" onClick={() => go("home")}>РАДУЙКА</button><p>Букеты, которые говорят за вас.</p></div><div><b>Магазин</b><button onClick={() => openCatalog()}>Каталог</button><button onClick={() => go("flowers")}>Цветы</button><button onClick={startBuilder}>Собрать букет</button><button onClick={() => go("occasion")}>Поводы</button></div><div><b>Покупателям</b><button onClick={() => go("delivery")}>Доставка</button><Link href="/legal/payment-delivery">Оплата и доставка</Link><Link href="/legal/bonus-program">Бонусная программа</Link><Link href="/legal/returns-claims">Возврат и претензии</Link><Link href="/legal/offer">Публичная оферта</Link><Link href="/account">Личный кабинет</Link></div><div><b>Мы на связи</b>{sellerDetails.phone ? <a href={`tel:${sellerDetails.phone.replace(/[^+\d]/g, "")}`}>{sellerDetails.phone}</a> : <span>Телефон: __________________</span>}{sellerDetails.email ? <a href={`mailto:${sellerDetails.email}`}>{sellerDetails.email}</a> : <span>E-mail: __________________</span>}<a href={YANDEX_MAP_LINK} target="_blank" rel="noreferrer">{STORE_ADDRESS}</a><span>Пн–Пт: 09:00–21:00</span><span>Сб–Вс: 10:00–21:00</span></div></div><div className="footer-bottom"><span>© 2026 Радуйка</span><Link href="/legal/seller">Сведения о продавце</Link><Link href="/legal/privacy">Персональные данные</Link><Link href="/legal/personal-data-consent">Согласие на ПД</Link><Link href="/legal/cookies">Cookies</Link></div></footer>}
 
       {searchOpen && (
         <div className="overlay" role="dialog" aria-modal="true" aria-label="Поиск" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}>
@@ -1283,21 +1315,7 @@ export default function Home() {
 
       {giftOpen && <div className="overlay" role="dialog" aria-modal="true" aria-label="Подбор подарка" onMouseDown={(event) => { if (event.target === event.currentTarget) setGiftOpen(false); }}><button className="overlay-close" onClick={() => setGiftOpen(false)} aria-label="Закрыть"><Icon name="close" /></button><div className="gift-modal"><div className="gift-modal__badge"><Icon name="gift" /></div><p className="eyebrow">Быстрый подбор</p><h2>Кого будем радовать?</h2><div className="gift-options">{["Любимого человека", "Маму", "Подругу", "Коллегу", "Себя — заслуженно"].map((item, index) => <button key={item} onClick={() => { setGiftOpen(false); openCatalog(index < 3 ? "Нежные" : index === 3 ? "До 4 000 ₽" : "Все"); }}>{item}<Icon name="arrow" /></button>)}</div></div></div>}
 
-      {privacyOpen && (
-        <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="privacy-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setPrivacyOpen(false); }}>
-          <button className="overlay-close" onClick={() => setPrivacyOpen(false)} aria-label="Закрыть"><Icon name="close" /></button>
-          <section className="dialog-modal policy-modal">
-            <p className="eyebrow">Ваши данные</p>
-            <h2 id="privacy-title">Политика конфиденциальности</h2>
-            <div className="policy-copy">
-              <p>Для оформления заказа магазин получает имя, телефон, адрес доставки и текст открытки. Эти данные нужны только для связи, сборки и доставки заказа.</p>
-              <p>Избранное сохраняется локально в браузере. Важные даты зарегистрированных покупателей хранятся в Supabase и защищены правилами доступа.</p>
-              <p>Это демонстрационная версия магазина. Перед публичным запуском политика должна быть дополнена реквизитами оператора и сроками хранения данных.</p>
-            </div>
-            <button className="button button--navy" type="button" onClick={() => setPrivacyOpen(false)}>Понятно</button>
-          </section>
-        </div>
-      )}
+
 
       {orderStatusOpen && latestOrder && (
         <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="status-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setOrderStatusOpen(false); }}>

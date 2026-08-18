@@ -90,6 +90,19 @@ export default function RegisterForm({ configured }: { configured: boolean }) {
         <AuthFieldError field="passwordConfirmation" state={state} />
       </label>
 
+      <label className="legal-checkbox">
+        <input
+          type="checkbox"
+          name="personalDataConsent"
+          required
+          aria-invalid={Boolean(state.fieldErrors?.personalDataConsent)}
+        />
+        <span>
+          Я даю отдельное <Link href="/legal/personal-data-consent" target="_blank" rel="noopener noreferrer">согласие на обработку персональных данных для создания и работы личного кабинета</Link> и ознакомился(ась) с <Link href="/legal/privacy" target="_blank" rel="noopener noreferrer">Политикой обработки персональных данных</Link>.
+        </span>
+      </label>
+      <AuthFieldError field="personalDataConsent" state={state} />
+
       <button
         className="button button--navy button--wide auth-submit"
         type="submit"
@@ -97,10 +110,6 @@ export default function RegisterForm({ configured }: { configured: boolean }) {
       >
         {pending ? "Создаём аккаунт…" : "Зарегистрироваться"}
       </button>
-
-      <p className="auth-legal">
-        Регистрируясь, вы соглашаетесь с политикой обработки персональных данных.
-      </p>
       <p className="auth-links">
         Уже есть аккаунт? <Link href="/login">Войти</Link>
       </p>

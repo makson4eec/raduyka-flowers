@@ -159,8 +159,9 @@ export default function AccountDashboard({
         <p>
           {bonusBalance === null
             ? "Баланс временно недоступен."
-            : "После подтверждения email — 1 000 бонусов. До 10% покупки можно оплатить бонусами, а после выполненного заказа начислим ещё 5%."}
+            : "После подтверждения email — 1 000 бонусов. До 10% участвующей в программе стоимости можно оплатить бонусами, а после оплаченного и выполненного заказа начислим ещё 5%."}
         </p>
+        <Link className="text-link" href="/legal/bonus-program">Правила бонусной программы</Link>
       </section>
 
       <section className="reminders-section" aria-labelledby="reminders-title">

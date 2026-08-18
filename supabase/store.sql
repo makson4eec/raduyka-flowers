@@ -6,6 +6,16 @@ create table if not exists public.products (
   name text not null,
   subtitle text not null default '',
   care text not null default '',
+  species_info text not null default '',
+  manufacturer text not null default '',
+  manufacturer_address text not null default '',
+  manufacturing_place text not null default '',
+  importer_info text not null default '',
+  shelf_life text not null default '',
+  warranty_info text not null default '',
+  safe_use text not null default '',
+  conformity_info text not null default '',
+  conformity_url text not null default '',
   price integer not null check (price > 0),
   old_price integer,
   image text not null,
@@ -14,6 +24,7 @@ create table if not exists public.products (
   size text not null,
   palette text not null check (palette in ('pink', 'white', 'bright', 'green')),
   kind text not null check (kind in ('catalog', 'flower', 'builder')),
+  catalog_category text not null default 'bouquet' check (catalog_category in ('bouquet', 'composition')),
   visible boolean not null default true,
   featured boolean not null default false,
   sort_order integer not null default 0,
@@ -28,6 +39,28 @@ alter table public.products
 
 alter table public.products
   add column if not exists variants jsonb not null default '[]'::jsonb;
+
+alter table public.products
+  add column if not exists catalog_category text not null default 'bouquet';
+
+alter table public.products
+  drop constraint if exists products_catalog_category_check;
+
+alter table public.products
+  add constraint products_catalog_category_check
+  check (catalog_category in ('bouquet', 'composition'));
+
+alter table public.products
+  add column if not exists species_info text not null default '',
+  add column if not exists manufacturer text not null default '',
+  add column if not exists manufacturer_address text not null default '',
+  add column if not exists manufacturing_place text not null default '',
+  add column if not exists importer_info text not null default '',
+  add column if not exists shelf_life text not null default '',
+  add column if not exists warranty_info text not null default '',
+  add column if not exists safe_use text not null default '',
+  add column if not exists conformity_info text not null default '',
+  add column if not exists conformity_url text not null default '';
 
 alter table public.products
   drop constraint if exists products_kind_check;
@@ -61,12 +94,20 @@ create table if not exists public.orders (
   delivery_time text not null default '',
   card_text text not null default '',
   admin_note text not null default '',
+  privacy_notice_version text,
+  offer_version text,
+  legal_accepted_at timestamptz,
   items jsonb not null,
   idempotency_key_hash text unique,
   idempotency_fingerprint_hash text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.orders
+  add column if not exists privacy_notice_version text,
+  add column if not exists offer_version text,
+  add column if not exists legal_accepted_at timestamptz;
 
 create index if not exists products_sort_idx on public.products(sort_order, id);
 create index if not exists orders_created_idx on public.orders(created_at desc);

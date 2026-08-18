@@ -54,13 +54,13 @@ function notificationBody(title: string, offset: 0 | 1 | 3 | 7) {
   const eventTitle = title.trim().replace(/[.!?]+$/u, "");
   switch (offset) {
     case 7:
-      return `Через 7 дней — ${eventTitle}. Самое время подумать о букете.`;
+      return `Через 7 дней — ${eventTitle}. Это ваше сохранённое напоминание.`;
     case 3:
-      return `Через 3 дня — ${eventTitle}. Можно заранее выбрать свежие цветы.`;
+      return `Через 3 дня — ${eventTitle}. Это ваше сохранённое напоминание.`;
     case 1:
-      return `Завтра — ${eventTitle}. Не забудьте подготовить цветы ❤️`;
+      return `Завтра — ${eventTitle}. Это ваше сохранённое напоминание.`;
     case 0:
-      return `Сегодня — ${eventTitle}. Пусть этот день станет особенным.`;
+      return `Сегодня — ${eventTitle}. Это ваше сохранённое напоминание.`;
   }
 }
 

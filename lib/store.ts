@@ -17,6 +17,7 @@ import {
   bouquetSizePriceAdjustment,
   productAddOnsPrice,
 } from "./order-options";
+import { LEGAL_DOCUMENT_VERSION } from "./legal";
 import type {
   BouquetSize,
   BuilderSelection,
@@ -55,6 +56,16 @@ type ProductRow = {
   name: string;
   subtitle: string;
   care: string;
+  species_info: string;
+  manufacturer: string;
+  manufacturer_address: string;
+  manufacturing_place: string;
+  importer_info: string;
+  shelf_life: string;
+  warranty_info: string;
+  safe_use: string;
+  conformity_info: string;
+  conformity_url: string;
   price: number;
   old_price: number | null;
   image: string;
@@ -63,6 +74,7 @@ type ProductRow = {
   size: string;
   palette: Product["palette"];
   kind: Product["kind"];
+  catalog_category: Product["catalogCategory"] | null;
   visible: boolean;
   featured: boolean;
   sort_order: number;
@@ -94,6 +106,9 @@ type OrderRow = {
   delivery_time: string;
   card_text: string;
   admin_note: string;
+  privacy_notice_version: string | null;
+  offer_version: string | null;
+  legal_accepted_at: string | null;
   items: OrderItem[];
   idempotency_key_hash: string | null;
   idempotency_fingerprint_hash: string | null;
@@ -156,6 +171,16 @@ function productFromRow(row: ProductRow): Product {
     name: row.name,
     subtitle: row.subtitle,
     care: row.care ?? "",
+    speciesInfo: row.species_info ?? "",
+    manufacturer: row.manufacturer ?? "",
+    manufacturerAddress: row.manufacturer_address ?? "",
+    manufacturingPlace: row.manufacturing_place ?? "",
+    importerInfo: row.importer_info ?? "",
+    shelfLife: row.shelf_life ?? "",
+    warrantyInfo: row.warranty_info ?? "",
+    safeUse: row.safe_use ?? "",
+    conformityInfo: row.conformity_info ?? "",
+    conformityUrl: row.conformity_url ?? "",
     price: Number(row.price),
     ...(row.old_price === null ? {} : { oldPrice: Number(row.old_price) }),
     image: row.image,
@@ -164,6 +189,7 @@ function productFromRow(row: ProductRow): Product {
     size: row.size,
     palette: row.palette,
     kind: row.kind,
+    catalogCategory: row.catalog_category === "composition" ? "composition" : "bouquet",
     visible: row.visible,
     featured: row.featured,
     sortOrder: Number(row.sort_order),
@@ -176,6 +202,16 @@ function productToRow(input: ProductInput) {
     name: input.name,
     subtitle: input.subtitle,
     care: input.care,
+    species_info: input.speciesInfo ?? "",
+    manufacturer: input.manufacturer ?? "",
+    manufacturer_address: input.manufacturerAddress ?? "",
+    manufacturing_place: input.manufacturingPlace ?? "",
+    importer_info: input.importerInfo ?? "",
+    shelf_life: input.shelfLife ?? "",
+    warranty_info: input.warrantyInfo ?? "",
+    safe_use: input.safeUse ?? "",
+    conformity_info: input.conformityInfo ?? "",
+    conformity_url: input.conformityUrl ?? "",
     price: input.price,
     old_price: input.oldPrice ?? null,
     image: input.image,
@@ -184,6 +220,7 @@ function productToRow(input: ProductInput) {
     size: input.size,
     palette: input.palette,
     kind: input.kind,
+    catalog_category: input.catalogCategory === "composition" ? "composition" : "bouquet",
     visible: input.visible,
     featured: input.featured,
     sort_order: input.sortOrder,
@@ -218,6 +255,9 @@ function orderFromRow(row: OrderRow): StoredOrder {
     deliveryTime: row.delivery_time,
     cardText: row.card_text,
     adminNote: row.admin_note,
+    privacyNoticeVersion: row.privacy_notice_version,
+    offerVersion: row.offer_version,
+    legalAcceptedAt: row.legal_accepted_at,
     items: Array.isArray(row.items) ? row.items : [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -256,6 +296,9 @@ function orderToRow(order: StoredOrder) {
     delivery_time: order.deliveryTime,
     card_text: order.cardText,
     admin_note: order.adminNote,
+    privacy_notice_version: order.privacyNoticeVersion ?? null,
+    offer_version: order.offerVersion ?? null,
+    legal_accepted_at: order.legalAcceptedAt ?? null,
     items: order.items,
     idempotency_key_hash: order.idempotencyKeyHash ?? null,
     idempotency_fingerprint_hash: order.idempotencyFingerprintHash ?? null,
@@ -287,7 +330,7 @@ function cloneOrder(order: StoredOrder): Order {
 export async function listProducts(includeHidden = false): Promise<Product[]> {
   let query = db()
     .from("products")
-    .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
+    .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants")
     .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
 
@@ -313,7 +356,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
     const { data, error } = await client
       .from("products")
       .insert({ id: nextId, ...productToRow(input) })
-      .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
+      .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants")
       .single();
 
     if (!error && data) return productFromRow(data as ProductRow);
@@ -328,7 +371,7 @@ export async function updateProduct(id: number, input: ProductInput): Promise<Pr
     .from("products")
     .update(productToRow(input))
     .eq("id", id)
-    .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
+    .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants")
     .maybeSingle();
 
   if (error) throw error;
@@ -445,7 +488,7 @@ export async function createOrder(
 
     const { data: productRows, error: productError } = await db()
       .from("products")
-      .select("id,name,subtitle,care,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
+      .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,visible,featured,sort_order,variants")
       .in("id", requestedIds);
     if (productError) throw productError;
 
@@ -604,6 +647,9 @@ export async function createOrder(
       deliveryTime: input.deliveryTime,
       cardText: input.cardText,
       adminNote: "",
+      privacyNoticeVersion: LEGAL_DOCUMENT_VERSION,
+      offerVersion: input.offerVersion,
+      legalAcceptedAt: now,
       items,
       createdAt: now,
       updatedAt: now,

@@ -36,8 +36,7 @@ const MAX_DELIVERY_FEE = 1_000_000;
 
 function isIsoTimestamp(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 40) return false;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+  return Number.isFinite(Date.parse(value));
 }
 
 export async function PATCH(request: Request, context: Context) {

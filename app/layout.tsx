@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import CookieNotice from "@/components/legal/CookieNotice";
 
 export const metadata: Metadata = {
   title: "Радуйка — букеты, которые говорят за вас",
@@ -18,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body>{children}</body>
+      <body>{children}<CookieNotice /></body>
     </html>
   );
 }

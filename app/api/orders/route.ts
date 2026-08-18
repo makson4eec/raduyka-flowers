@@ -19,6 +19,7 @@ import {
   StoreConflictError,
   StoreValidationError,
 } from "../../../lib/store";
+import { LEGAL_DOCUMENT_VERSION } from "../../../lib/legal";
 import type { CreateOrderInput } from "../../../lib/types";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +73,8 @@ const orderSchema = z.object({
     .refine((value) => safeMultilinePattern.test(value)),
   useBonus: z.boolean(),
   cardAdded: z.boolean(),
+  offerAccepted: z.literal(true),
+  offerVersion: z.literal(LEGAL_DOCUMENT_VERSION),
   items: z.array(z.object({
     productId: z.number().int().positive(),
     quantity: z.number().int().min(1).max(20),

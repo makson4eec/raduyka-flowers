@@ -42,6 +42,17 @@ function safeImagePath(value: unknown) {
     : "";
 }
 
+function safeHttpUrl(value: unknown) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString().slice(0, 2000) : "";
+  } catch {
+    return "";
+  }
+}
+
 function safeVariantId(value: unknown, fallback: string) {
   const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
   const slug = raw
@@ -69,18 +80,22 @@ function parseVariants(value: unknown): ProductVariant[] {
     while (usedIds.has(id)) id = `${id}-${usedIds.size + 1}`.slice(0, 40);
     usedIds.add(id);
 
-    const price = Number(input.price);
-    const oldPrice = Number(input.oldPrice);
+    const rawPrice = Number(input.price);
+    const normalizedPrice = Number.isFinite(rawPrice) && rawPrice > 0
+      ? boundedInteger(rawPrice, 1, MAX_PRODUCT_PRICE)
+      : undefined;
+    const rawOldPrice = Number(input.oldPrice);
+    const normalizedOldPrice = Number.isFinite(rawOldPrice) && rawOldPrice > 0
+      ? boundedInteger(rawOldPrice, 1, MAX_PRODUCT_PRICE)
+      : undefined;
 
     variants.push({
       id,
       label,
       image,
-      ...(Number.isFinite(price) && price > 0
-        ? { price: boundedInteger(price, 1, MAX_PRODUCT_PRICE) }
-        : {}),
-      ...(Number.isFinite(oldPrice) && oldPrice > 0
-        ? { oldPrice: boundedInteger(oldPrice, 1, MAX_PRODUCT_PRICE) }
+      ...(normalizedPrice ? { price: normalizedPrice } : {}),
+      ...(normalizedOldPrice && (!normalizedPrice || normalizedOldPrice > normalizedPrice)
+        ? { oldPrice: normalizedOldPrice }
         : {}),
     });
 
@@ -99,15 +114,27 @@ export function parseProduct(value: unknown): ProductInput {
   const allowedStocks = ["today", "few", "soon"] as const;
   const allowedPalettes = ["pink", "white", "bright", "green"] as const;
   const kind = input.kind === "builder" ? "builder" : input.kind === "flower" ? "flower" : "catalog";
+  const catalogCategory = input.catalogCategory === "composition" ? "composition" : "bouquet";
   const variants = parseVariants(input.variants);
 
   return {
     name: String(input.name ?? "").trim().slice(0, 120),
     subtitle: String(input.subtitle ?? "").trim().slice(0, 1000),
     care: String(input.care ?? "").trim().slice(0, 3000),
+    speciesInfo: String(input.speciesInfo ?? "").trim().slice(0, 1500),
+    manufacturer: String(input.manufacturer ?? "").trim().slice(0, 500),
+    manufacturerAddress: String(input.manufacturerAddress ?? "").trim().slice(0, 1000),
+    manufacturingPlace: String(input.manufacturingPlace ?? "").trim().slice(0, 1000),
+    importerInfo: String(input.importerInfo ?? "").trim().slice(0, 1500),
+    shelfLife: String(input.shelfLife ?? "").trim().slice(0, 1000),
+    warrantyInfo: String(input.warrantyInfo ?? "").trim().slice(0, 1000),
+    safeUse: String(input.safeUse ?? "").trim().slice(0, 3000),
+    conformityInfo: String(input.conformityInfo ?? "").trim().slice(0, 1500),
+    conformityUrl: safeHttpUrl(input.conformityUrl),
     price: Number.isFinite(price) ? price : 0,
     oldPrice:
-      Number.isFinite(oldPriceValue) && oldPriceValue > 0
+      Number.isFinite(oldPriceValue)
+      && oldPriceValue > price
         ? boundedInteger(oldPriceValue, 1, MAX_PRODUCT_PRICE)
         : undefined,
     image: safeImagePath(input.image),
@@ -116,6 +143,7 @@ export function parseProduct(value: unknown): ProductInput {
     size: ["S", "M", "L"].includes(String(input.size)) ? String(input.size) : "M",
     palette: allowedPalettes.includes(input.palette as (typeof allowedPalettes)[number]) ? input.palette as ProductInput["palette"] : "pink",
     kind,
+    catalogCategory,
     visible: input.visible !== false,
     featured: Boolean(input.featured),
     sortOrder: boundedInteger(input.sortOrder, 0, MAX_SORT_ORDER),

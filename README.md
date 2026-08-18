@@ -83,3 +83,9 @@ Cron уже описан в `vercel.json` и вызывает `/api/cron/reminde
 ## Безопасность
 
 `.gitignore` исключает `.env*`, Firebase Admin SDK JSON, приватные ключи, локальное хранилище заказов, `node_modules`, `.next` и `.vercel`.
+
+## Юридическая готовность перед публичным запуском
+
+Проект содержит юридические страницы, отдельное согласие на ПД, фиксацию версии оферты и дополнительные поля информации о товаре. Перед запуском обязательно выполните пункты из [`LEGAL_RELEASE_CHECKLIST.md`](./LEGAL_RELEASE_CHECKLIST.md), заполните `lib/legal.ts` и примените миграцию `supabase/migrations/2026-08-17-legal-readiness.sql`.
+
+Подробный список внесённых изменений: [`LEGAL_CHANGELOG.md`](./LEGAL_CHANGELOG.md).

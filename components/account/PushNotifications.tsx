@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   disableFirebasePushNotifications,
@@ -117,8 +118,8 @@ export default function PushNotifications() {
       <div className="push-card__copy">
         <p className="eyebrow">Уведомления</p>
         <h2 id="push-title">Не пропустите важный день</h2>
-        <p>Получайте напоминания о важных датах, чтобы не забыть заказать цветы заранее.</p>
-        <small>{enabled ? "Уведомления включены" : capabilityHint(capability)}</small>
+        <p>Получайте только сервисные напоминания о датах, которые вы сами сохранили.</p>
+        <small>{enabled ? "Уведомления включены" : capabilityHint(capability)} Подробнее: <Link href="/legal/privacy">персональные данные</Link>.</small>
         {message && <p className="account-success" role="status">{message}</p>}
         {error && <p className="account-error" role="alert">{error}</p>}
       </div>
