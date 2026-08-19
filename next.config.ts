@@ -4,6 +4,7 @@ const isDevelopment = process.env.NODE_ENV !== "production";
 const isHttpsDeployment =
   process.env.VERCEL === "1"
   || process.env.DEPLOYMENT_HTTPS_ONLY === "true";
+const productionAssetOrigin = "https://raduyka-flowers.vercel.app";
 
 const firebaseConnectSources = [
   "https://firebaseinstallations.googleapis.com",
@@ -21,7 +22,7 @@ const supabaseOrigin = (() => {
   }
 })();
 
-const imageSources = ["'self'", "data:", "blob:", ...(supabaseOrigin ? [supabaseOrigin] : [])];
+const imageSources = ["'self'", "data:", "blob:", productionAssetOrigin, ...(supabaseOrigin ? [supabaseOrigin] : [])];
 const connectSources = ["'self'", ...firebaseConnectSources, ...(supabaseOrigin ? [supabaseOrigin] : [])];
 const supabaseImagePattern = supabaseOrigin
   ? {
@@ -34,11 +35,11 @@ const supabaseImagePattern = supabaseOrigin
 
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' ${productionAssetOrigin} 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
   "script-src-attr 'none'",
-  "style-src 'self' 'unsafe-inline'",
+  `style-src 'self' ${productionAssetOrigin} 'unsafe-inline'`,
   `img-src ${imageSources.join(" ")}`,
-  "font-src 'self' data:",
+  `font-src 'self' ${productionAssetOrigin} data:`,
   `connect-src ${connectSources.join(" ")}`,
   "frame-src https://yandex.ru",
   "worker-src 'self' blob:",
@@ -107,12 +108,23 @@ const securityHeaders = [
     : []),
 ];
 
+const crossOriginAssetHeaders = [
+  {
+    key: "Access-Control-Allow-Origin",
+    value: "https://raduika.ru",
+  },
+  {
+    key: "Cross-Origin-Resource-Policy",
+    value: "cross-origin",
+  },
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  assetPrefix: isDevelopment ? undefined : productionAssetOrigin,
   images: {
-    // The deployment closes concurrent /_next/image responses under load.
-    // Keep Image layout/lazy-loading benefits while serving source files directly.
-    unoptimized: true,
+    unoptimized: isDevelopment,
+    path: isDevelopment ? "/_next/image" : `${productionAssetOrigin}/_next/image`,
     remotePatterns: supabaseImagePattern ? [supabaseImagePattern] : [],
   },
   async headers() {
@@ -127,6 +139,18 @@ const nextConfig: NextConfig = {
           key: "Content-Security-Policy",
           value: firebaseWorkerContentSecurityPolicy,
         }],
+      },
+      {
+        source: "/_next/static/:path*",
+        headers: crossOriginAssetHeaders,
+      },
+      {
+        source: "/_next/image",
+        headers: crossOriginAssetHeaders,
+      },
+      {
+        source: "/favicon.ico",
+        headers: crossOriginAssetHeaders,
       },
     ];
   },

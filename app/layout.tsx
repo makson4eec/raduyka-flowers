@@ -7,8 +7,8 @@ export const metadata: Metadata = {
   description:
     "Авторские букеты, свежие цветы, доставка и самовывоз. Соберите свой букет онлайн.",
   icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
+    icon: "https://raduyka-flowers.vercel.app/favicon.ico",
+    shortcut: "https://raduyka-flowers.vercel.app/favicon.ico",
   },
 };
 
