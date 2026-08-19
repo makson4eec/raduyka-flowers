@@ -111,7 +111,7 @@ const securityHeaders = [
 const crossOriginAssetHeaders = [
   {
     key: "Access-Control-Allow-Origin",
-    value: "https://raduika.ru",
+    value: "*",
   },
   {
     key: "Cross-Origin-Resource-Policy",
@@ -150,6 +150,11 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/favicon.ico",
+        headers: crossOriginAssetHeaders,
+      },
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "raduyka-flowers.vercel.app" }],
         headers: crossOriginAssetHeaders,
       },
     ];

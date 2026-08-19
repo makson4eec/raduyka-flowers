@@ -298,6 +298,7 @@ h3 {
 }
 
 .hero__image {
+  position: relative;
   min-height: 100%;
   overflow: hidden;
   margin-left: -92px;
@@ -772,6 +773,7 @@ h3 {
 }
 
 .page-hero__photo {
+  position: relative;
   min-height: 415px;
   overflow: hidden;
 }

@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import NextImage, { type ImageProps } from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { defaultProducts } from "../lib/catalog";
@@ -45,6 +45,10 @@ import type {
   ProductVariant,
   RecipientType,
 } from "../lib/types";
+
+function Image(props: ImageProps) {
+  return <NextImage {...props} crossOrigin="anonymous" />;
+}
 
 type View =
   | "home"
@@ -811,7 +815,7 @@ export default function Home() {
                 </div>
                 <div className="hero__facts"><span>Подтверждаем состав заказа</span><span>Доставка по согласованию</span></div>
               </div>
-              <div className="hero__image"><Image src="/images/hero-bouquet.webp" alt="Яркий авторский букет Радуйки" width={1085} height={1450} sizes="(max-width: 900px) 100vw, 50vw" preload /></div>
+              <div className="hero__image"><Image src="/images/hero-bouquet.webp" alt="Яркий авторский букет Радуйки" fill sizes="(max-width: 900px) 100vw, 50vw" preload /></div>
             </section>
 
             <section className="category-grid section-pad" aria-label="Категории">
@@ -861,7 +865,7 @@ export default function Home() {
         {view === "flowers" && (
           <section className="section-pad page-section flowers-page">
             <div className="page-hero page-hero--pink page-hero--media flowers-hero">
-              <div className="page-hero__photo"><Image src="/images/flowers-lilies.webp" alt="Белые лилии" width={1254} height={1254} sizes="(max-width: 900px) 100vw, 50vw" /></div>
+              <div className="page-hero__photo"><Image src="/images/flowers-lilies.webp" alt="Белые лилии" fill sizes="(max-width: 900px) 100vw, 50vw" /></div>
               <div className="page-hero__content">
                 <p className="eyebrow">Цветы Радуйки</p>
                 <h1>Цветы поштучно</h1>
@@ -907,7 +911,7 @@ export default function Home() {
 
         {view === "catalog" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--lime page-hero--media"><div className="page-hero__photo"><Image src="/images/hero-bouquet.webp" alt="Нежный букет роз" width={1085} height={1450} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div></div>
+            <div className="page-hero page-hero--lime page-hero--media"><div className="page-hero__photo"><Image src="/images/hero-bouquet.webp" alt="Нежный букет роз" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div></div>
             <div className="catalog-toolbar">
               <div className="filter-chips">{(["Все", "Цветы", "До 4 000 ₽", "Нежные", "Композиции", "Шары"] as CatalogFilter[]).map((item) => <button key={item} className={catalogFilter === item ? "is-active" : ""} onClick={() => setCatalogFilter(item)}>{item}</button>)}</div>
               <label>Сортировка<select value={sort} onChange={(event) => setSort(event.target.value)}><option>Популярные</option><option>Сначала дешевле</option><option>Сначала дороже</option></select></label>
@@ -1028,7 +1032,7 @@ export default function Home() {
 
         {view === "builder" && (
           <section className="section-pad page-section builder-page">
-            <div className="page-hero page-hero--pink page-hero--media"><div className="page-hero__photo"><Image src="/images/florist-workshop.webp" alt="Авторский букет из разноцветных цветов" width={1271} height={1237} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Личный флорист онлайн</p><h1>Соберите букет<br />под своё настроение</h1><p>Четыре простых шага. Финальный состав уточнит флорист и соберёт его из свежих цветов.</p></div></div>
+            <div className="page-hero page-hero--pink page-hero--media"><div className="page-hero__photo"><Image src="/images/florist-workshop.webp" alt="Авторский букет из разноцветных цветов" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Личный флорист онлайн</p><h1>Соберите букет<br />под своё настроение</h1><p>Четыре простых шага. Финальный состав уточнит флорист и соберёт его из свежих цветов.</p></div></div>
             <div className="builder-layout">
               <div className="builder-card">
                 <div className="builder-progress"><span>Шаг {builderStep} из 4</span><div>{[1,2,3,4].map((step) => <i key={step} className={step <= builderStep ? "is-done" : ""} />)}</div></div>
@@ -1045,7 +1049,7 @@ export default function Home() {
 
         {view === "occasion" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><Image src="/images/bouquet-1.webp" alt="Яркий букет гербер" width={1254} height={1254} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div></div>
+            <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><Image src="/images/bouquet-1.webp" alt="Яркий букет гербер" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div></div>
             <div className="occasion-grid">{[
               ["День рождения", "Ярко, празднично и с вау-эффектом", "01"],
               ["Для любимого человека", "Тепло, лично и без лишней слащавости", "02"],
@@ -1060,7 +1064,7 @@ export default function Home() {
 
         {view === "delivery" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><Image src="/images/bouquet-5.webp" alt="Свежие гортензии" width={1122} height={1402} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div></div>
+            <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><Image src="/images/bouquet-5.webp" alt="Свежие гортензии" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div></div>
             <div className="delivery-grid"><article><span>01</span><h3>По тарифу сервиса</h3><strong>После адреса</strong><p>Яндекс Доставка рассчитает стоимость после проверки указанного адреса.</p></article><article><span>02</span><h3>Согласуем заранее</h3><strong>До оплаты</strong><p>Сообщим итоговую стоимость доставки вместе с подтверждением заказа.</p></article><article><span>03</span><h3>Самовывоз</h3><strong>Бесплатно</strong><p>{STORE_ADDRESS}. Сообщим, когда заказ будет готов.</p></article></div>
             <section className="studio-location" aria-labelledby="studio-location-title">
               <div className="studio-location__copy">
