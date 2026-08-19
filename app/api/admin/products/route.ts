@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { getAuthorizedAdmin, unauthorizedResponse } from "../../../../lib/admin-auth";
 import { parseProduct } from "../../../../lib/product-input";
 import { flowerVariantValidationError } from "../../../../lib/product-variants";
@@ -40,7 +41,9 @@ export async function POST(request: Request) {
     if (variantError) {
       return noStoreJson({ error: variantError }, { status: 400 });
     }
-    return noStoreJson({ product: await createProduct(input) }, { status: 201 });
+    const product = await createProduct(input);
+    revalidateTag("products", { expire: 0 });
+    return noStoreJson({ product }, { status: 201 });
   } catch (error) {
     if (error instanceof StoreValidationError) {
       return noStoreJson({ error: error.message }, { status: 400 });

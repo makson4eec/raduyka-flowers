@@ -1,11 +1,16 @@
+import { unstable_cache } from "next/cache";
 import { listProducts } from "../../../lib/store";
-import { noStoreJson, securityErrorResponse } from "../../../lib/http-security";
+import { securityErrorResponse } from "../../../lib/http-security";
 
-export const dynamic = "force-dynamic";
+const getCachedProducts = unstable_cache(
+  () => listProducts(false),
+  ["public-products"],
+  { revalidate: 300, tags: ["products"] },
+);
 
 export async function GET() {
   try {
-    return noStoreJson({ products: await listProducts(false) });
+    return Response.json({ products: await getCachedProducts() });
   } catch (error) {
     return securityErrorResponse(error);
   }

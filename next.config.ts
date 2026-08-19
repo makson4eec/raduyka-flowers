@@ -23,6 +23,14 @@ const supabaseOrigin = (() => {
 
 const imageSources = ["'self'", "data:", "blob:", ...(supabaseOrigin ? [supabaseOrigin] : [])];
 const connectSources = ["'self'", ...firebaseConnectSources, ...(supabaseOrigin ? [supabaseOrigin] : [])];
+const supabaseImagePattern = supabaseOrigin
+  ? {
+      protocol: new URL(supabaseOrigin).protocol.slice(0, -1) as "http" | "https",
+      hostname: new URL(supabaseOrigin).hostname,
+      port: new URL(supabaseOrigin).port,
+      pathname: "/storage/v1/object/public/**",
+    }
+  : null;
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -101,6 +109,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  images: {
+    remotePatterns: supabaseImagePattern ? [supabaseImagePattern] : [],
+  },
   async headers() {
     return [
       {

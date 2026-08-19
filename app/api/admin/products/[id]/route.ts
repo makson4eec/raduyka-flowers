@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { getAuthorizedAdmin, unauthorizedResponse } from "../../../../../lib/admin-auth";
 import { parseProduct } from "../../../../../lib/product-input";
 import { flowerVariantValidationError } from "../../../../../lib/product-variants";
@@ -47,7 +48,9 @@ export async function PATCH(request: Request, context: Context) {
     if (variantError) {
       return noStoreJson({ error: variantError }, { status: 400 });
     }
-    return noStoreJson({ product: await updateProduct(id, input) });
+    const product = await updateProduct(id, input);
+    revalidateTag("products", { expire: 0 });
+    return noStoreJson({ product });
   } catch (error) {
     return storeErrorResponse(error);
   }
@@ -62,6 +65,7 @@ export async function DELETE(request: Request, context: Context) {
       return noStoreJson({ error: "Некорректный товар." }, { status: 400 });
     }
     await deleteProduct(id);
+    revalidateTag("products", { expire: 0 });
     return noStoreJson({ ok: true });
   } catch (error) {
     return storeErrorResponse(error);

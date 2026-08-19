@@ -7,6 +7,10 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!admin|api/admin|_next/static|_next/image|favicon.ico|firebase-messaging-sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/account/:path*",
+    "/update-password/:path*",
+    "/api/bonus/:path*",
+    "/api/reminders/:path*",
+    "/api/push/:path*",
   ],
 };

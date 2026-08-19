@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { defaultProducts } from "../lib/catalog";
@@ -178,7 +179,12 @@ function ProductCard({
   return (
     <article className="product-card">
       <button className="product-card__image" onClick={onOpen} aria-label={`Открыть ${product.name}`}>
-        <img src={getVariantImage(product, coverVariant)} alt={product.name} />
+        <Image
+          src={getVariantImage(product, coverVariant)}
+          alt={product.name}
+          fill
+          sizes="(max-width: 680px) 100vw, (max-width: 1050px) 50vw, 25vw"
+        />
         {publicProductTag(product.tag) && <span className="product-tag">{publicProductTag(product.tag)}</span>}
       </button>
       <button className={`heart-button ${liked ? "is-liked" : ""}`} onClick={onLike} aria-label={liked ? "Убрать из избранного" : "Добавить в избранное"}>
@@ -237,6 +243,7 @@ export default function Home() {
   const [latestOrder, setLatestOrder] = useState<LatestOrder | null>(null);
   const checkoutAttemptIdRef = useRef<string | null>(null);
   const latestOrderExpiresAtRef = useRef<number | null>(null);
+  const bonusRequestedRef = useRef(false);
   const [storageReady, setStorageReady] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
 
@@ -245,7 +252,7 @@ export default function Home() {
 
     const refreshProducts = async () => {
       try {
-        const response = await fetch(`/api/products?t=${Date.now()}`, { cache: "no-store" });
+        const response = await fetch("/api/products");
         if (!response.ok) throw new Error("Каталог временно недоступен");
         const payload = await response.json() as { products?: Product[] };
         if (active && Array.isArray(payload.products)) setProducts(payload.products);
@@ -270,7 +277,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    let active = true;
+    if ((view !== "cart" && view !== "checkout") || bonusRequestedRef.current) return;
+    bonusRequestedRef.current = true;
+
     fetch("/api/bonus", { cache: "no-store", credentials: "same-origin" })
       .then(async (response) => {
         const payload = await response.json() as { authenticated?: boolean; available?: boolean; balance?: number; error?: string };
@@ -278,7 +287,6 @@ export default function Home() {
         return payload;
       })
       .then((payload) => {
-        if (!active) return;
         const authenticated = payload.authenticated === true;
         const available = payload.available === true;
         const balance = authenticated && typeof payload.balance === "number" && Number.isFinite(payload.balance)
@@ -288,12 +296,9 @@ export default function Home() {
         if (!authenticated || !available || balance === 0) setBonus(false);
       })
       .catch(() => {
-        if (active) setBonusAccount({ authenticated: false, available: false, balance: null, loading: false });
+        setBonusAccount({ authenticated: false, available: false, balance: null, loading: false });
       });
-    return () => {
-      active = false;
-    };
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -805,15 +810,15 @@ export default function Home() {
                 </div>
                 <div className="hero__facts"><span>Подтверждаем состав заказа</span><span>Доставка по согласованию</span></div>
               </div>
-              <div className="hero__image"><img src="/images/hero-bouquet.png" alt="Яркий авторский букет Радуйки" /></div>
+              <div className="hero__image"><Image src="/images/hero-bouquet.png" alt="Яркий авторский букет Радуйки" width={1085} height={1450} sizes="(max-width: 900px) 100vw, 50vw" preload /></div>
             </section>
 
             <section className="category-grid section-pad" aria-label="Категории">
-              <button onClick={() => openCatalog()} className="category category--cream"><span>Букеты</span><Icon name="arrow" /><img src="/images/bouquet-1.png" alt="" /></button>
-              <button onClick={() => go("flowers")} className="category category--blush"><span>Цветы</span><Icon name="arrow" /><img src="/images/flowers-lilies.png" alt="" /></button>
-              <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />по городу</span><Icon name="arrow" /><img src="/images/bouquet-2.png" alt="" /></button>
-              <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><img src="/images/composition-roses.png" alt="" /></button>
-              <button onClick={() => openCatalog("Шары")} className="category category--cream"><span>Воздушные<br />шары</span><Icon name="arrow" /><img src="/images/balloons.svg" alt="" /></button>
+              <button onClick={() => openCatalog()} className="category category--cream"><span>Букеты</span><Icon name="arrow" /><Image src="/images/bouquet-1.png" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
+              <button onClick={() => go("flowers")} className="category category--blush"><span>Цветы</span><Icon name="arrow" /><Image src="/images/flowers-lilies.png" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
+              <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />по городу</span><Icon name="arrow" /><Image src="/images/bouquet-2.png" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
+              <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><Image src="/images/composition-roses.png" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
+              <button onClick={() => openCatalog("Шары")} className="category category--cream"><span>Воздушные<br />шары</span><Icon name="arrow" /><Image src="/images/balloons.svg" alt="" width={800} height={800} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
             </section>
 
             <section className="promise-strip section-pad">
@@ -830,7 +835,7 @@ export default function Home() {
             </section>
 
             <section className="builder-banner section-pad">
-              <div className="builder-banner__image"><img src="/images/florist-workshop.png" alt="Флорист собирает букет" /></div>
+              <div className="builder-banner__image"><Image src="/images/florist-workshop.png" alt="Флорист собирает букет" width={1271} height={1237} sizes="(max-width: 900px) 100vw, 55vw" /></div>
               <div className="builder-banner__copy"><p className="eyebrow">Букет с вашим характером</p><h2>Соберите свой<br />за четыре шага</h2><p>Выберите настроение, бюджет и упаковку. Флорист подберёт доступные цветы и согласует существенные изменения состава.</p><button className="button button--navy" onClick={startBuilder}>Начать сборку</button></div>
             </section>
 
@@ -855,7 +860,7 @@ export default function Home() {
         {view === "flowers" && (
           <section className="section-pad page-section flowers-page">
             <div className="page-hero page-hero--pink page-hero--media flowers-hero">
-              <div className="page-hero__photo"><img src="/images/flowers-lilies.png" alt="Белые лилии" /></div>
+              <div className="page-hero__photo"><Image src="/images/flowers-lilies.png" alt="Белые лилии" width={1254} height={1254} sizes="(max-width: 900px) 100vw, 50vw" /></div>
               <div className="page-hero__content">
                 <p className="eyebrow">Цветы Радуйки</p>
                 <h1>Цветы поштучно</h1>
@@ -901,7 +906,7 @@ export default function Home() {
 
         {view === "catalog" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--lime page-hero--media"><div className="page-hero__photo"><img src="/images/hero-bouquet.png" alt="Нежный букет роз" /></div><div className="page-hero__content"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div></div>
+            <div className="page-hero page-hero--lime page-hero--media"><div className="page-hero__photo"><Image src="/images/hero-bouquet.png" alt="Нежный букет роз" width={1085} height={1450} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div></div>
             <div className="catalog-toolbar">
               <div className="filter-chips">{(["Все", "Цветы", "До 4 000 ₽", "Нежные", "Композиции", "Шары"] as CatalogFilter[]).map((item) => <button key={item} className={catalogFilter === item ? "is-active" : ""} onClick={() => setCatalogFilter(item)}>{item}</button>)}</div>
               <label>Сортировка<select value={sort} onChange={(event) => setSort(event.target.value)}><option>Популярные</option><option>Сначала дешевле</option><option>Сначала дороже</option></select></label>
@@ -921,7 +926,7 @@ export default function Home() {
             <div className="product-detail">
               <div className="product-detail__gallery">
                 <div className="product-detail__main">
-                  <img src={displayedGalleryImage} alt={`${selectedProduct.name}${selectedVariant?.label ? `, ${selectedVariant.label}` : ""}`} />
+                  <Image src={displayedGalleryImage} alt={`${selectedProduct.name}${selectedVariant?.label ? `, ${selectedVariant.label}` : ""}`} fill sizes="(max-width: 900px) 100vw, 55vw" />
                   {publicProductTag(selectedProduct.tag) && <span className="product-tag">{publicProductTag(selectedProduct.tag)}</span>}
                 </div>
                 <div className="thumb-row">
@@ -937,7 +942,7 @@ export default function Home() {
                           setGalleryImage(variant.image);
                         }}
                       >
-                        <img src={variant.image} alt={`${selectedProduct.name}, ${variant.label}`} />
+                        <Image src={variant.image} alt={`${selectedProduct.name}, ${variant.label}`} width={92} height={92} sizes="92px" />
                       </button>
                     ))
                     : (
@@ -947,10 +952,10 @@ export default function Home() {
                         aria-pressed={!galleryImage || galleryImage === selectedProduct.image}
                         onClick={() => setGalleryImage(selectedProduct.image)}
                       >
-                        <img src={selectedProduct.image} alt="Вид товара" />
+                        <Image src={selectedProduct.image} alt="Вид товара" width={92} height={92} sizes="92px" />
                       </button>
                     )}
-                  {!selectedProductIsBalloons && !selectedProductIsFlower && <button className={galleryImage === "/images/florist-workshop.png" ? "is-active" : ""} aria-label="Показать процесс сборки" aria-pressed={galleryImage === "/images/florist-workshop.png"} onClick={() => setGalleryImage("/images/florist-workshop.png")}><img src="/images/florist-workshop.png" alt="Сборка флористом" /></button>}
+                  {!selectedProductIsBalloons && !selectedProductIsFlower && <button className={galleryImage === "/images/florist-workshop.png" ? "is-active" : ""} aria-label="Показать процесс сборки" aria-pressed={galleryImage === "/images/florist-workshop.png"} onClick={() => setGalleryImage("/images/florist-workshop.png")}><Image src="/images/florist-workshop.png" alt="Сборка флористом" width={92} height={92} sizes="92px" /></button>}
                   <button className="photo-note" onClick={() => notify("Фото готового заказа пришлём перед доставкой")}>Фото<br />перед<br />доставкой</button>
                 </div>
               </div>
@@ -974,7 +979,7 @@ export default function Home() {
                               setGalleryImage(variant.image);
                             }}
                           >
-                            <img src={variant.image} alt="" />
+                            <Image src={variant.image} alt="" width={76} height={76} sizes="76px" />
                             <span><b>{variant.label}</b><small>{money(variantPrice)}</small></span>
                           </button>
                         );
@@ -1022,7 +1027,7 @@ export default function Home() {
 
         {view === "builder" && (
           <section className="section-pad page-section builder-page">
-            <div className="page-hero page-hero--pink page-hero--media"><div className="page-hero__photo"><img src="/images/florist-workshop.png" alt="Авторский букет из разноцветных цветов" /></div><div className="page-hero__content"><p className="eyebrow">Личный флорист онлайн</p><h1>Соберите букет<br />под своё настроение</h1><p>Четыре простых шага. Финальный состав уточнит флорист и соберёт его из свежих цветов.</p></div></div>
+            <div className="page-hero page-hero--pink page-hero--media"><div className="page-hero__photo"><Image src="/images/florist-workshop.png" alt="Авторский букет из разноцветных цветов" width={1271} height={1237} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Личный флорист онлайн</p><h1>Соберите букет<br />под своё настроение</h1><p>Четыре простых шага. Финальный состав уточнит флорист и соберёт его из свежих цветов.</p></div></div>
             <div className="builder-layout">
               <div className="builder-card">
                 <div className="builder-progress"><span>Шаг {builderStep} из 4</span><div>{[1,2,3,4].map((step) => <i key={step} className={step <= builderStep ? "is-done" : ""} />)}</div></div>
@@ -1032,14 +1037,14 @@ export default function Home() {
                 {builderStep === 4 && <div className="builder-question"><p className="eyebrow">04 — упаковка</p><h2>Последний штрих</h2><div className="wrap-options">{builderWraps.map((item, index) => <button key={item} className={builderWrap === item ? "is-active" : ""} onClick={() => setBuilderWrap(item)}><span className={`wrap-swatch wrap-swatch--${index + 1}`} /><b>{item}</b></button>)}</div><div className="builder-summary"><span>Ваш выбор</span><b>{builderMood} · {builderFlowerSelection.join(", ")} · {builderWrap}</b><strong>{money(builderBudget)}</strong></div></div>}
                 <div className="builder-controls">{builderStep > 1 && <button className="button button--light" onClick={() => setBuilderStep(builderStep - 1)}>Назад</button>}{builderStep < 4 ? <button className="button button--navy" onClick={() => setBuilderStep(builderStep + 1)}>Продолжить</button> : <button className="button button--navy" onClick={finishBuilder} disabled={!builderProduct}>Добавить в корзину</button>}</div>
               </div>
-              <aside className="builder-preview"><img src="/images/hero-bouquet.png" alt="Пример авторского букета" /><div><p>Ваш будущий букет</p><b>{builderMood} характер</b><span>Финальный вид пришлём на согласование</span></div></aside>
+              <aside className="builder-preview"><Image src="/images/hero-bouquet.png" alt="Пример авторского букета" width={1085} height={1450} sizes="(max-width: 900px) 100vw, 40vw" /><div><p>Ваш будущий букет</p><b>{builderMood} характер</b><span>Финальный вид пришлём на согласование</span></div></aside>
             </div>
           </section>
         )}
 
         {view === "occasion" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><img src="/images/bouquet-1.png" alt="Яркий букет гербер" /></div><div className="page-hero__content"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div></div>
+            <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><Image src="/images/bouquet-1.png" alt="Яркий букет гербер" width={1254} height={1254} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div></div>
             <div className="occasion-grid">{[
               ["День рождения", "Ярко, празднично и с вау-эффектом", "01"],
               ["Для любимого человека", "Тепло, лично и без лишней слащавости", "02"],
@@ -1054,7 +1059,7 @@ export default function Home() {
 
         {view === "delivery" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><img src="/images/bouquet-5.png" alt="Свежие гортензии" /></div><div className="page-hero__content"><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div></div>
+            <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><Image src="/images/bouquet-5.png" alt="Свежие гортензии" width={1122} height={1402} sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div></div>
             <div className="delivery-grid"><article><span>01</span><h3>По тарифу сервиса</h3><strong>После адреса</strong><p>Яндекс Доставка рассчитает стоимость после проверки указанного адреса.</p></article><article><span>02</span><h3>Согласуем заранее</h3><strong>До оплаты</strong><p>Сообщим итоговую стоимость доставки вместе с подтверждением заказа.</p></article><article><span>03</span><h3>Самовывоз</h3><strong>Бесплатно</strong><p>{STORE_ADDRESS}. Сообщим, когда заказ будет готов.</p></article></div>
             <section className="studio-location" aria-labelledby="studio-location-title">
               <div className="studio-location__copy">
@@ -1093,7 +1098,7 @@ export default function Home() {
 
         {view === "about" && (
           <section className="section-pad page-section">
-            <div className="about-hero"><div><p className="eyebrow">Радость — в живых деталях</p><h1>Не копируем букеты.<br />Собираем эмоции.</h1><p>«Радуйка» — цветочная студия, где современная флористика встречается с человеческой заботой. Каждый заказ собираем вручную в день доставки.</p></div><img src="/images/florist-workshop.png" alt="Работа флориста Радуйки" /></div>
+            <div className="about-hero"><div><p className="eyebrow">Радость — в живых деталях</p><h1>Не копируем букеты.<br />Собираем эмоции.</h1><p>«Радуйка» — цветочная студия, где современная флористика встречается с человеческой заботой. Каждый заказ собираем вручную в день доставки.</p></div><Image src="/images/florist-workshop.png" alt="Работа флориста Радуйки" width={1271} height={1237} sizes="(max-width: 900px) 100vw, 55vw" /></div>
             <div className="values-grid"><article><span>01</span><h3>Живые цветы</h3><p>Оттенок, размер и степень раскрытия бутонов естественно различаются. Это учитываем при сборке.</p></article><article><span>02</span><h3>Сохраняем характер</h3><p>При допустимых природных отличиях ориентируемся на выбранную палитру, объём и общий образ букета.</p></article><article><span>03</span><h3>Согласуем существенное</h3><p>Заметные замены состава или изменение стоимости подтверждаем с покупателем до оплаты или передачи заказа.</p></article></div>
             <div className="team-note"><div className="team-note__number">12</div><div><p className="eyebrow">Флористов и курьеров</p><h2>Одна команда, которая отвечает за результат</h2><p>От первого сообщения до вручения букета у заказа есть конкретные люди, а не безымянный конвейер.</p></div><button className="button button--light" onClick={() => openCatalog()}>Выбрать букет</button></div>
           </section>
@@ -1142,7 +1147,7 @@ export default function Home() {
                       : [variant?.label, bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
                     return (
                       <article className="cart-line" key={line.key}>
-                        <img src={getVariantImage(product, variant)} alt={productDisplayName(product, variant)} />
+                        <Image src={getVariantImage(product, variant)} alt={productDisplayName(product, variant)} width={150} height={150} sizes="150px" />
                         <div className="cart-line__info">
                           <h3>{productDisplayName(product, variant)}</h3>
                           <p>{product.subtitle}</p>
@@ -1281,7 +1286,7 @@ export default function Home() {
                   const configuration = line.builder
                     ? `${line.builder.mood} · ${line.builder.wrap}`
                     : [variant?.label, bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
-                  return <div className="mini-line" key={line.key}><img src={getVariantImage(product, variant)} alt="" /><span><b>{productDisplayName(product, variant)}</b><small>{configuration}<br />{line.quantity} × {money(lineUnitPrice(line, product))}</small></span></div>;
+                  return <div className="mini-line" key={line.key}><Image src={getVariantImage(product, variant)} alt="" width={62} height={62} sizes="62px" /><span><b>{productDisplayName(product, variant)}</b><small>{configuration}<br />{line.quantity} × {money(lineUnitPrice(line, product))}</small></span></div>;
                 })}
                 {cardAdded && <div className="mini-line mini-line--card"><span>✎</span><span><b>Открытка</b><small>{money(cardFee)}</small></span></div>}
                 {bonus && <div className="summary-line summary-line--pink"><span>Бонусы</span><b>−{money(discount)}</b></div>}
@@ -1307,7 +1312,7 @@ export default function Home() {
             <div className="search-results">
               {!normalizedSearch && <p className="search-empty">Начните вводить название букета или цветы в составе.</p>}
               {normalizedSearch && !searchResults.length && <p className="search-empty">Ничего не нашли. Попробуйте другое название.</p>}
-              {searchResults.slice(0, 6).map((product) => <button key={product.id} onClick={() => openProduct(product.id)}><img src={product.image} alt="" /><span><b>{product.name}</b><small>{product.subtitle}</small></span><strong>{money(product.price)}</strong></button>)}
+              {searchResults.slice(0, 6).map((product) => <button key={product.id} onClick={() => openProduct(product.id)}><Image src={product.image} alt="" width={68} height={68} sizes="68px" /><span><b>{product.name}</b><small>{product.subtitle}</small></span><strong>{money(product.price)}</strong></button>)}
             </div>
           </div>
         </div>
