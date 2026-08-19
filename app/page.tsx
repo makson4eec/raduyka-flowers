@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import NextImage, { type ImageProps } from "next/image";
+import Image, { type ImageProps } from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import bouquetCategoryImage from "../public/images/bouquet-3.webp";
@@ -51,8 +51,34 @@ import type {
   RecipientType,
 } from "../lib/types";
 
-function Image(props: ImageProps) {
-  return <NextImage {...props} crossOrigin="anonymous" />;
+type ProductImageProps = Omit<ImageProps, "src" | "unoptimized"> & {
+  src: string;
+};
+
+function ProductImage({ src, alt, onError, style, ...props }: ProductImageProps) {
+  const preferredSrc = optimizedImageSource(src);
+  const [failure, setFailure] = useState({ source: src, attempts: 0 });
+  const attempts = failure.source === src ? failure.attempts : 0;
+  const hasOriginalFallback = preferredSrc !== src;
+  const exhausted = attempts >= (hasOriginalFallback ? 3 : 2);
+  const resolvedSrc = hasOriginalFallback && attempts >= 2 ? src : preferredSrc;
+
+  return (
+    <Image
+      {...props}
+      src={resolvedSrc}
+      alt={alt}
+      unoptimized={attempts >= 1}
+      style={exhausted ? { ...style, visibility: "hidden" } : style}
+      onError={exhausted ? onError : (event) => {
+        onError?.(event);
+        setFailure((current) => ({
+          source: src,
+          attempts: current.source === src ? current.attempts + 1 : 1,
+        }));
+      }}
+    />
+  );
 }
 
 type View =
@@ -190,8 +216,8 @@ function ProductCard({
   return (
     <article className="product-card">
       <button className="product-card__image" onClick={onOpen} aria-label={`Открыть ${product.name}`}>
-        <Image
-          src={optimizedImageSource(getVariantImage(product, coverVariant))}
+        <ProductImage
+          src={getVariantImage(product, coverVariant)}
           alt={product.name}
           fill
           sizes="(max-width: 680px) 100vw, (max-width: 1050px) 50vw, 25vw"
@@ -945,7 +971,7 @@ export default function Home() {
             <div className="product-detail">
               <div className="product-detail__gallery">
                 <div className="product-detail__main">
-                  <Image src={optimizedImageSource(displayedGalleryImage)} alt={`${selectedProduct.name}${selectedVariant?.label ? `, ${selectedVariant.label}` : ""}`} fill sizes="(max-width: 900px) 100vw, 55vw" />
+                  <ProductImage src={displayedGalleryImage} alt={`${selectedProduct.name}${selectedVariant?.label ? `, ${selectedVariant.label}` : ""}`} fill sizes="(max-width: 900px) 100vw, 55vw" />
                   {publicProductTag(selectedProduct.tag) && <span className="product-tag">{publicProductTag(selectedProduct.tag)}</span>}
                 </div>
                 <div className="thumb-row">
@@ -961,7 +987,7 @@ export default function Home() {
                           setGalleryImage(variant.image);
                         }}
                       >
-                        <Image src={optimizedImageSource(variant.image)} alt={`${selectedProduct.name}, ${variant.label}`} width={92} height={92} sizes="92px" />
+                        <ProductImage src={variant.image} alt={`${selectedProduct.name}, ${variant.label}`} width={92} height={92} sizes="92px" />
                       </button>
                     ))
                     : (
@@ -971,7 +997,7 @@ export default function Home() {
                         aria-pressed={!galleryImage || galleryImage === selectedProduct.image}
                         onClick={() => setGalleryImage(selectedProduct.image)}
                       >
-                        <Image src={optimizedImageSource(selectedProduct.image)} alt="Вид товара" width={92} height={92} sizes="92px" />
+                        <ProductImage src={selectedProduct.image} alt="Вид товара" width={92} height={92} sizes="92px" />
                       </button>
                     )}
                   {!selectedProductIsBalloons && !selectedProductIsFlower && <button className={galleryImage === "/images/florist-workshop.webp" ? "is-active" : ""} aria-label="Показать процесс сборки" aria-pressed={galleryImage === "/images/florist-workshop.webp"} onClick={() => setGalleryImage("/images/florist-workshop.webp")}><Image src="/images/florist-workshop.webp" alt="Сборка флористом" width={92} height={92} sizes="92px" /></button>}
@@ -998,7 +1024,7 @@ export default function Home() {
                               setGalleryImage(variant.image);
                             }}
                           >
-                            <Image src={optimizedImageSource(variant.image)} alt="" width={76} height={76} sizes="76px" />
+                            <ProductImage src={variant.image} alt="" width={76} height={76} sizes="76px" />
                             <span><b>{variant.label}</b><small>{money(variantPrice)}</small></span>
                           </button>
                         );
@@ -1166,7 +1192,7 @@ export default function Home() {
                       : [variant?.label, bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
                     return (
                       <article className="cart-line" key={line.key}>
-                        <Image src={optimizedImageSource(getVariantImage(product, variant))} alt={productDisplayName(product, variant)} width={150} height={150} sizes="150px" />
+                        <ProductImage src={getVariantImage(product, variant)} alt={productDisplayName(product, variant)} width={150} height={150} sizes="150px" />
                         <div className="cart-line__info">
                           <h3>{productDisplayName(product, variant)}</h3>
                           <p>{product.subtitle}</p>
@@ -1305,7 +1331,7 @@ export default function Home() {
                   const configuration = line.builder
                     ? `${line.builder.mood} · ${line.builder.wrap}`
                     : [variant?.label, bouquetSizeLabel(line.size), productAddOnsLabel(line.addOns)].filter(Boolean).join(" · ");
-                  return <div className="mini-line" key={line.key}><Image src={optimizedImageSource(getVariantImage(product, variant))} alt="" width={62} height={62} sizes="62px" /><span><b>{productDisplayName(product, variant)}</b><small>{configuration}<br />{line.quantity} × {money(lineUnitPrice(line, product))}</small></span></div>;
+                  return <div className="mini-line" key={line.key}><ProductImage src={getVariantImage(product, variant)} alt="" width={62} height={62} sizes="62px" /><span><b>{productDisplayName(product, variant)}</b><small>{configuration}<br />{line.quantity} × {money(lineUnitPrice(line, product))}</small></span></div>;
                 })}
                 {cardAdded && <div className="mini-line mini-line--card"><span>✎</span><span><b>Открытка</b><small>{money(cardFee)}</small></span></div>}
                 {bonus && <div className="summary-line summary-line--pink"><span>Бонусы</span><b>−{money(discount)}</b></div>}
@@ -1331,7 +1357,7 @@ export default function Home() {
             <div className="search-results">
               {!normalizedSearch && <p className="search-empty">Начните вводить название букета или цветы в составе.</p>}
               {normalizedSearch && !searchResults.length && <p className="search-empty">Ничего не нашли. Попробуйте другое название.</p>}
-              {searchResults.slice(0, 6).map((product) => <button key={product.id} onClick={() => openProduct(product.id)}><Image src={optimizedImageSource(product.image)} alt="" width={68} height={68} sizes="68px" /><span><b>{product.name}</b><small>{product.subtitle}</small></span><strong>{money(product.price)}</strong></button>)}
+              {searchResults.slice(0, 6).map((product) => <button key={product.id} onClick={() => openProduct(product.id)}><ProductImage src={product.image} alt="" width={68} height={68} sizes="68px" /><span><b>{product.name}</b><small>{product.subtitle}</small></span><strong>{money(product.price)}</strong></button>)}
             </div>
           </div>
         </div>
