@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { optimizedImageSource } from "../../lib/image-assets";
 import {
   bouquetSizeLabel,
   cardFee as defaultCardFee,
@@ -104,7 +105,7 @@ const blankProduct = (): Product => ({
   conformityInfo: "",
   conformityUrl: "",
   price: 0,
-  image: "/images/bouquet-1.png",
+  image: "/images/bouquet-1.webp",
   stock: "today",
   size: "M",
   palette: "pink",
@@ -225,7 +226,7 @@ function OrderEditor({
               const addOnsLabel = productAddOnsLabel(item.addOns);
               return (
                 <div key={orderItemKey(item, index)}>
-                  <img src={item.image} alt="" />
+                  <img src={optimizedImageSource(item.image)} alt="" />
                   <span>
                     <b>{item.name}</b>
                     <small>{item.quantity} × {money(item.price)}</small>
@@ -753,7 +754,7 @@ export default function AdminDashboard({
                 const adminPrice = getVariantPrice(product, primaryVariant);
                 return (
                 <article className={"admin-product " + (!product.visible ? "is-hidden" : "")} key={product.id}>
-                  <img src={adminImage} alt={product.name} />
+                  <img src={optimizedImageSource(adminImage)} alt={product.name} />
                   <div className="admin-product__main">
                     <div className="admin-product__badges">
                       <span>{product.kind === "builder" ? "Конструктор" : product.kind === "flower" ? "Цветы" : product.catalogCategory === "composition" ? "Композиция" : "Букет"}</span>
@@ -898,9 +899,9 @@ export default function AdminDashboard({
 
             <div className="admin-image-field">
               <img
-                src={draft.kind === "flower" && draft.variants.length > 0
+                src={optimizedImageSource(draft.kind === "flower" && draft.variants.length > 0
                   ? getVariantImage(draft, draft.variants[0])
-                  : draft.image}
+                  : draft.image)}
                 alt="Предпросмотр товара"
               />
               {draft.kind === "flower" && draft.variants.length > 0 ? (
@@ -961,7 +962,7 @@ export default function AdminDashboard({
                       {draft.variants.map((variant, index) => (
                         <div className="admin-variant-card" key={variant.id}>
                           <div className="admin-variant-card__preview">
-                            <img src={variant.image || draft.image} alt={variant.label || "Вариант цвета"} />
+                            <img src={optimizedImageSource(variant.image || draft.image)} alt={variant.label || "Вариант цвета"} />
                             {index === 0 && <span>Основной</span>}
                           </div>
                           <div className="admin-variant-card__fields">

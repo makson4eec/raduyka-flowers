@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "images:optimize": "node scripts/optimize-static-images.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "migrate:supabase": "node --env-file=.env.local scripts/migrate-store-to-supabase.mjs"
   },
