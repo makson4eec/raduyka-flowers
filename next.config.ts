@@ -110,6 +110,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: {
+    // The deployment closes concurrent /_next/image responses under load.
+    // Keep Image layout/lazy-loading benefits while serving source files directly.
+    unoptimized: true,
     remotePatterns: supabaseImagePattern ? [supabaseImagePattern] : [],
   },
   async headers() {
