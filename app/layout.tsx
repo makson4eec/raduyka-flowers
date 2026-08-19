@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import AssetConnectionHints from "@/components/AssetConnectionHints";
 import CookieNotice from "@/components/legal/CookieNotice";
 
 export const metadata: Metadata = {
@@ -19,7 +20,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body>{children}<CookieNotice /></body>
+      <body>
+        <AssetConnectionHints />
+        {children}
+        <CookieNotice />
+      </body>
     </html>
   );
 }

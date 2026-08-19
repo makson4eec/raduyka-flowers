@@ -336,16 +336,31 @@ h3 {
 }
 
 .category--cream {
+  --category-surface: var(--white);
   background: var(--white);
 }
 
 .category--blush {
+  --category-surface: var(--blush);
   background: var(--blush);
+}
+
+.category::after {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 42%;
+  width: 16%;
+  pointer-events: none;
+  content: "";
+  background: linear-gradient(90deg, var(--category-surface), transparent);
 }
 
 .category > span {
   z-index: 2;
   align-self: start;
+  max-width: 49%;
   font-size: clamp(1.25rem, 2vw, 1.85rem);
   line-height: 1.1;
 }
@@ -363,10 +378,17 @@ h3 {
 
 .category img {
   position: absolute;
-  right: -7%;
-  bottom: -42%;
-  width: 63%;
-  mix-blend-mode: multiply;
+  top: 0;
+  right: 0;
+  width: 56%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+}
+
+.category--balloons img {
+  padding: 12px 18px;
+  object-fit: contain;
 }
 
 .gift-box {

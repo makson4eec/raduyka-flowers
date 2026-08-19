@@ -23,7 +23,7 @@ const supabaseOrigin = (() => {
 })();
 
 const imageSources = ["'self'", "data:", "blob:", productionAssetOrigin, ...(supabaseOrigin ? [supabaseOrigin] : [])];
-const connectSources = ["'self'", ...firebaseConnectSources, ...(supabaseOrigin ? [supabaseOrigin] : [])];
+const connectSources = ["'self'", productionAssetOrigin, ...firebaseConnectSources, ...(supabaseOrigin ? [supabaseOrigin] : [])];
 const supabaseImagePattern = supabaseOrigin
   ? {
       protocol: new URL(supabaseOrigin).protocol.slice(0, -1) as "http" | "https",
@@ -125,6 +125,10 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: isDevelopment,
     path: isDevelopment ? "/_next/image" : `${productionAssetOrigin}/_next/image`,
+    deviceSizes: [384, 640, 750, 828, 1080, 1200, 1440, 1920],
+    imageSizes: [48, 64, 96, 128, 256],
+    qualities: [70, 75],
+    minimumCacheTTL: 86_400,
     remotePatterns: supabaseImagePattern ? [supabaseImagePattern] : [],
   },
   async headers() {

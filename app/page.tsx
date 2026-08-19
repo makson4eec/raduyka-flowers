@@ -5,6 +5,11 @@ import Link from "next/link";
 import NextImage, { type ImageProps } from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import bouquetCategoryImage from "../public/images/bouquet-3.webp";
+import deliveryCategoryImage from "../public/images/bouquet-4.webp";
+import flowersCategoryImage from "../public/images/bouquet-6.webp";
+import compositionCategoryImage from "../public/images/composition-roses.webp";
+import heroBouquetImage from "../public/images/hero-bouquet.webp";
 import { defaultProducts } from "../lib/catalog";
 import { optimizedImageSource } from "../lib/image-assets";
 import { LEGAL_DOCUMENT_VERSION, sellerDetails } from "../lib/legal";
@@ -109,6 +114,7 @@ const money = (value: number) =>
 const STORE_ADDRESS = "Екатеринбург, ул. Библиотечная, 43";
 const YANDEX_MAP_EMBED_URL = "https://yandex.ru/map-widget/v1/?ll=60.659323%2C56.833035&mode=search&oid=200831341309&ol=biz&z=17";
 const YANDEX_MAP_LINK = "https://yandex.ru/maps/-/CTSgV45D";
+const PRODUCTION_ASSET_ORIGIN = "https://raduyka-flowers.vercel.app";
 const LATEST_ORDER_STORAGE_KEY = "raduyka-latest-order-v2";
 const LATEST_ORDER_TTL_MS = 24 * 60 * 60_000;
 
@@ -254,15 +260,23 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
+    let refreshInFlight = false;
 
     const refreshProducts = async () => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
       try {
-        const response = await fetch("/api/products");
+        const productsApiUrl = ["raduika.ru", "www.raduika.ru"].includes(window.location.hostname)
+          ? `${PRODUCTION_ASSET_ORIGIN}/api/products`
+          : "/api/products";
+        const response = await fetch(productsApiUrl);
         if (!response.ok) throw new Error("Каталог временно недоступен");
         const payload = await response.json() as { products?: Product[] };
         if (active && Array.isArray(payload.products)) setProducts(payload.products);
       } catch {
         // Статический каталог остаётся безопасным резервом при временном сбое сети.
+      } finally {
+        refreshInFlight = false;
       }
     };
 
@@ -815,15 +829,15 @@ export default function Home() {
                 </div>
                 <div className="hero__facts"><span>Подтверждаем состав заказа</span><span>Доставка по согласованию</span></div>
               </div>
-              <div className="hero__image"><Image src="/images/hero-bouquet.webp" alt="Яркий авторский букет Радуйки" fill sizes="(max-width: 900px) 100vw, 50vw" preload /></div>
+              <div className="hero__image"><Image src={heroBouquetImage} alt="Яркий авторский букет Радуйки" fill sizes="(max-width: 900px) 100vw, 50vw" placeholder="blur" preload /></div>
             </section>
 
             <section className="category-grid section-pad" aria-label="Категории">
-              <button onClick={() => openCatalog()} className="category category--cream"><span>Букеты</span><Icon name="arrow" /><Image src="/images/bouquet-1.webp" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
-              <button onClick={() => go("flowers")} className="category category--blush"><span>Цветы</span><Icon name="arrow" /><Image src="/images/flowers-lilies.webp" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
-              <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />по городу</span><Icon name="arrow" /><Image src="/images/bouquet-2.webp" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
-              <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><Image src="/images/composition-roses.webp" alt="" width={1254} height={1254} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
-              <button onClick={() => openCatalog("Шары")} className="category category--cream"><span>Воздушные<br />шары</span><Icon name="arrow" /><Image src="/images/balloons.svg" alt="" width={800} height={800} sizes="(max-width: 680px) 63vw, (max-width: 1050px) 32vw, 13vw" /></button>
+              <button onClick={() => openCatalog()} className="category category--cream"><span>Букеты</span><Icon name="arrow" /><Image src={bouquetCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
+              <button onClick={() => go("flowers")} className="category category--blush"><span>Цветы</span><Icon name="arrow" /><Image src={flowersCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
+              <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />по городу</span><Icon name="arrow" /><Image src={deliveryCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
+              <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><Image src={compositionCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
+              <button onClick={() => openCatalog("Шары")} className="category category--cream category--balloons"><span>Воздушные<br />шары</span><Icon name="arrow" /><Image src="/images/balloons.svg" alt="" width={800} height={800} sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" /></button>
             </section>
 
             <section className="promise-strip section-pad">
