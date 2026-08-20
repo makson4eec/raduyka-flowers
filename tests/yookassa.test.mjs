@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   amountToMinorUnits,
+  parseYooKassaErrorResponse,
   parseYooKassaPayment,
   rublesToYooKassaValue,
   verifyYooKassaPaymentForOrder,
+  yooKassaAdminErrorMessage,
 } from "../lib/yookassa-contract.ts";
 
 const paymentId = "264e0bc0-000f-5000-a000-109b22344b4c";
@@ -165,4 +167,58 @@ test("строго проверяет структуру ответа ЮKassa", 
       ),
     /confirmation URL/,
   );
+});
+
+test("разбирает официальный ответ ЮKassa с причиной ошибки", () => {
+  const details = parseYooKassaErrorResponse({
+    type: "error",
+    id: "e65a8f85-f8b7-4f4f-9fd3-bfef99aacbbb",
+    code: "invalid_request",
+    description: "Receipt is missing or illegal",
+    parameter: "receipt.items[0].vat_code",
+  });
+
+  assert.deepEqual(details, {
+    code: "invalid_request",
+    description: "Receipt is missing or illegal",
+    parameter: "receipt.items[0].vat_code",
+    requestId: "e65a8f85-f8b7-4f4f-9fd3-bfef99aacbbb",
+  });
+  assert.match(yooKassaAdminErrorMessage(400, details), /receipt\.items\[0\]\.vat_code/);
+  assert.match(yooKassaAdminErrorMessage(400, details), /Receipt is missing/);
+});
+
+test("показывает понятные действия для ошибок доступа ЮKassa", () => {
+  const credentials = parseYooKassaErrorResponse({
+    type: "error",
+    id: "e65a8f85-f8b7-4f4f-9fd3-bfef99aacbbb",
+    code: "invalid_credentials",
+  });
+  const forbidden = parseYooKassaErrorResponse({
+    type: "error",
+    id: "17a47682-8d47-4655-a414-a58bdbcd46f9",
+    code: "forbidden",
+  });
+
+  assert.match(yooKassaAdminErrorMessage(401, credentials), /YOOKASSA_SHOP_ID/);
+  assert.match(yooKassaAdminErrorMessage(403, forbidden), /подключена оплата через СБП/);
+});
+
+test("не пропускает неподтверждённые и опасные данные ошибки", () => {
+  assert.equal(parseYooKassaErrorResponse(null), null);
+  assert.equal(parseYooKassaErrorResponse({ type: "error", code: "invalid_request" }), null);
+
+  const details = parseYooKassaErrorResponse({
+    type: "error",
+    id: "e65a8f85-f8b7-4f4f-9fd3-bfef99aacbbb",
+    code: "invalid_request",
+    description: `<script>${"x".repeat(600)}</script>\nnext`,
+    parameter: "receipt<script>",
+  });
+  const message = yooKassaAdminErrorMessage(400, details);
+
+  assert.ok(details);
+  assert.equal(details.parameter, undefined);
+  assert.equal(details.description.length, 400);
+  assert.doesNotMatch(message, /[<>]/);
 });

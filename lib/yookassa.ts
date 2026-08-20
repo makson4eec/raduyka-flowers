@@ -3,8 +3,10 @@ import "server-only";
 import {
   amountToMinorUnits,
   isYooKassaPaymentId,
+  parseYooKassaErrorResponse,
   parseYooKassaPayment,
   rublesToYooKassaValue,
+  yooKassaAdminErrorMessage,
   type YooKassaPayment,
 } from "./yookassa-contract";
 
@@ -142,7 +144,17 @@ async function requestPayment(
   }
 
   if (!response.ok) {
-    throw new YooKassaApiError("ЮKassa отклонила запрос. Попробуйте ещё раз.", {
+    const details = parseYooKassaErrorResponse(payload);
+    if (details) {
+      console.error("YooKassa API rejected a request", {
+        upstreamStatus: response.status,
+        code: details.code,
+        parameter: details.parameter,
+        description: details.description,
+        requestId: details.requestId,
+      });
+    }
+    throw new YooKassaApiError(yooKassaAdminErrorMessage(response.status, details), {
       upstreamStatus: response.status,
     });
   }

@@ -36,6 +36,13 @@ export type YooKassaPaymentVerification =
         | "payment_method_mismatch";
     };
 
+export type YooKassaErrorResponse = {
+  code: string;
+  description?: string;
+  parameter?: string;
+  requestId: string;
+};
+
 const PAYMENT_STATUSES = new Set<YooKassaPaymentStatus>([
   "pending",
   "waiting_for_capture",
@@ -50,6 +57,97 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function boundedProviderText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
+    .slice(0, maxLength);
+  return normalized || undefined;
+}
+
+export function parseYooKassaErrorResponse(
+  value: unknown,
+): YooKassaErrorResponse | null {
+  const source = asRecord(value);
+  if (!source || source.type !== "error") return null;
+
+  const code = boundedProviderText(source.code, 64);
+  const requestId = boundedProviderText(source.id, 64);
+  if (
+    !code
+    || !/^[a-z0-9_]+$/.test(code)
+    || !requestId
+    || !/^[0-9a-f-]{36}$/i.test(requestId)
+  ) {
+    return null;
+  }
+
+  const rawParameter = typeof source.parameter === "string"
+    ? source.parameter.trim()
+    : undefined;
+  const parameter = rawParameter
+    && rawParameter.length <= 128
+    && /^[A-Za-z0-9_.\[\]-]+$/.test(rawParameter)
+    ? rawParameter
+    : undefined;
+
+  return {
+    code,
+    requestId,
+    description: boundedProviderText(source.description, 400),
+    parameter,
+  };
+}
+
+export function yooKassaAdminErrorMessage(
+  status: number,
+  details: YooKassaErrorResponse | null,
+) {
+  let message: string;
+  switch (details?.code) {
+    case "invalid_credentials":
+      message = "ЮKassa не приняла данные магазина. Проверьте production-переменные YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY.";
+      break;
+    case "forbidden":
+      message = "ЮKassa запретила операцию. Проверьте в кабинете, что для магазина подключена оплата через СБП.";
+      break;
+    case "invalid_request":
+      message = "ЮKassa отклонила параметры платежа.";
+      break;
+    case "too_many_requests":
+      message = "ЮKassa временно ограничила количество запросов. Повторите попытку позже.";
+      break;
+    case "internal_server_error":
+      message = "На стороне ЮKassa произошла временная ошибка. Повторите попытку позже.";
+      break;
+    default:
+      if (status === 401) {
+        message = "ЮKassa не приняла данные магазина. Проверьте production-переменные подключения.";
+      } else if (status === 403) {
+        message = "ЮKassa запретила операцию. Проверьте подключённые способы оплаты магазина.";
+      } else if (status === 429) {
+        message = "ЮKassa временно ограничила количество запросов. Повторите попытку позже.";
+      } else if (status >= 500) {
+        message = "ЮKassa временно недоступна. Повторите попытку позже.";
+      } else {
+        message = "ЮKassa отклонила запрос.";
+      }
+  }
+
+  if (details?.parameter) {
+    message += ` Параметр: ${details.parameter}.`;
+  }
+  if (details?.description) {
+    message += ` Причина ЮKassa: ${details.description}.`;
+  }
+  if (details?.requestId) {
+    message += ` Код обращения: ${details.requestId}.`;
+  }
+  return message;
 }
 
 function isHttpsUrl(value: string) {
