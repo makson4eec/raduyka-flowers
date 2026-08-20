@@ -204,6 +204,10 @@ function OrderEditor({
   const manualPaymentOptions = Object.entries(paymentLabels).filter(
     ([value]) => value !== "invoice_sent" || order.paymentStatus === "invoice_sent",
   );
+  const canCreatePaymentFromSelect = paymentCanBeCreated
+    && !paymentAttemptExists
+    && hasSavedDelivery
+    && paymentFieldsAreSaved;
 
   const save = async (nextStatus: OrderStatus = status) => {
     setSaving(true);
@@ -370,9 +374,20 @@ function OrderEditor({
           <select
             value={paymentStatus}
             disabled={archived || saving || creatingPayment || paymentAttemptExists}
-            onChange={(event) => setPaymentStatus(event.target.value as PaymentStatus)}
+            onChange={(event) => {
+              if (event.target.value === "create_sbp") {
+                void createPayment();
+                return;
+              }
+              setPaymentStatus(event.target.value as PaymentStatus);
+            }}
           >
             {manualPaymentOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {paymentCanBeCreated && !paymentAttemptExists && (
+              <option value="create_sbp" disabled={!canCreatePaymentFromSelect}>
+                Выставить оплату СБП
+              </option>
+            )}
           </select>
         </label>
         <label>

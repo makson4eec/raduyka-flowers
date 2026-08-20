@@ -925,17 +925,25 @@ export async function markYooKassaPaymentCanceled(
 }
 
 export function publicOrderStatus(order: Order) {
+  const paymentUrl =
+    order.status !== "cancelled"
+    && order.paymentStatus !== "paid"
+    && order.paymentStatus !== "refunded"
+    && typeof order.yookassaPaymentUrl === "string"
+      ? order.yookassaPaymentUrl
+      : null;
+
   return {
     orderNumber: order.orderNumber,
     total: order.total,
     status: order.status,
-    paymentStatus: order.paymentStatus,
-    paymentUrl:
-      order.status !== "cancelled"
-      && order.paymentStatus === "invoice_sent"
-      && typeof order.yookassaPaymentUrl === "string"
-        ? order.yookassaPaymentUrl
-        : null,
+    paymentStatus:
+      paymentUrl
+        ? "invoice_sent" as const
+        : order.paymentStatus === "invoice_sent"
+          ? "pending" as const
+          : order.paymentStatus,
+    paymentUrl,
     updatedAt: order.updatedAt,
   };
 }

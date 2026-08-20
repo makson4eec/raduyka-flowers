@@ -157,7 +157,7 @@ const orderStatusLabels: Record<OrderStatus, string> = {
 };
 
 const paymentStatusLabels: Record<PaymentStatus, string> = {
-  pending: "Ожидает подтверждения",
+  pending: "Ссылка на оплату ещё не выставлена",
   invoice_sent: "Ссылка на оплату отправлена",
   paid: "Оплачено",
   refunded: "Возврат оформлен",
@@ -1483,6 +1483,9 @@ export default function Home() {
                 <p className="eyebrow">Заказ {latestOrder.orderNumber}</p>
                 <h2 id="status-title">{orderStatusLabels[latestOrder.status]}</h2>
                 <div className="order-status-card"><span>Оплата</span><b>{paymentStatusLabels[latestOrder.paymentStatus]}</b><span>Сумма</span><b>{money(latestOrder.total)}</b>{latestOrder.updatedAt && <><span>Обновлено</span><b>{new Date(latestOrder.updatedAt).toLocaleString("ru-RU")}</b></>}</div>
+                {!isHttpsUrl(latestOrder.paymentUrl) && latestOrder.paymentStatus === "pending" && (
+                  <p className="payment-qr-hint">После того как сотрудник выставит оплату, обновите статус — здесь появится переход к QR ЮKassa.</p>
+                )}
                 {isHttpsUrl(latestOrder.paymentUrl) && latestOrder.paymentStatus !== "paid" && latestOrder.paymentStatus !== "refunded" && (
                   <p className="payment-qr-hint">На компьютере ЮKassa покажет QR-код СБП, на телефоне — список банков.</p>
                 )}
