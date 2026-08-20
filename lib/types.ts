@@ -96,6 +96,11 @@ export type Order = {
   orderNumber: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  /** YooKassa identifiers are created and trusted only on the server. */
+  yookassaPaymentId?: string | null;
+  yookassaPaymentUrl?: string | null;
+  /** Frozen payment amount in whole rubles for the current YooKassa attempt. */
+  yookassaPaymentAmount?: number | null;
   deliveryMethod: "delivery" | "pickup";
   deliveryFee: number | null;
   cardAdded?: boolean;

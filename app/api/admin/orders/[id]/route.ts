@@ -8,6 +8,7 @@ import {
 import {
   StoreConflictError,
   StoreNotFoundError,
+  StoreValidationError,
   updateOrderAndSyncBonuses,
 } from "../../../../../lib/store";
 import type { OrderStatus, PaymentStatus } from "../../../../../lib/types";
@@ -102,6 +103,9 @@ export async function PATCH(request: Request, context: Context) {
     }
     if (error instanceof StoreNotFoundError) {
       return noStoreJson({ error: error.message }, { status: 404 });
+    }
+    if (error instanceof StoreValidationError) {
+      return noStoreJson({ error: error.message }, { status: 400 });
     }
     return securityErrorResponse(error);
   }

@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import Image, { type ImageProps } from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import bouquetCategoryImage from "../public/images/bouquet-3.webp";
 import deliveryCategoryImage from "../public/images/bouquet-4.webp";
@@ -112,6 +112,7 @@ type LatestOrder = {
   customerPhone?: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  paymentUrl?: string | null;
   updatedAt?: string;
 };
 
@@ -143,6 +144,7 @@ const YANDEX_MAP_LINK = "https://yandex.ru/maps/-/CTSgV45D";
 const PRODUCTION_ASSET_ORIGIN = "https://raduyka-flowers.vercel.app";
 const LATEST_ORDER_STORAGE_KEY = "raduyka-latest-order-v2";
 const LATEST_ORDER_TTL_MS = 24 * 60 * 60_000;
+const ORDER_NUMBER_PATTERN = /^RAD-\d{6}-(?:\d{4}|[0-9A-F]{12})$/;
 
 const orderStatusLabels: Record<OrderStatus, string> = {
   new: "Заказ принят",
@@ -163,6 +165,15 @@ const paymentStatusLabels: Record<PaymentStatus, string> = {
 
 const orderStatuses = Object.keys(orderStatusLabels) as OrderStatus[];
 const paymentStatuses = Object.keys(paymentStatusLabels) as PaymentStatus[];
+
+const isHttpsUrl = (value: string | null | undefined): value is string => {
+  if (!value) return false;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
 
 const publicProductTag = (tag: string | undefined) =>
   tag && !/налич|остат|поступ|скоро/i.test(tag) ? tag : undefined;
@@ -259,6 +270,9 @@ export default function Home() {
   const [giftOpen, setGiftOpen] = useState(false);
   const [orderStatusOpen, setOrderStatusOpen] = useState(false);
   const [orderStatusLoading, setOrderStatusLoading] = useState(false);
+  const [returnedOrderLookup, setReturnedOrderLookup] = useState<string | null>(null);
+  const [returnedOrderPhone, setReturnedOrderPhone] = useState("");
+  const [returnedOrderError, setReturnedOrderError] = useState("");
   const [toast, setToast] = useState("");
   const [galleryImage, setGalleryImage] = useState("");
   const [selectedSize, setSelectedSize] = useState<BouquetSize>("medium");
@@ -280,6 +294,7 @@ export default function Home() {
   const [latestOrder, setLatestOrder] = useState<LatestOrder | null>(null);
   const checkoutAttemptIdRef = useRef<string | null>(null);
   const latestOrderExpiresAtRef = useRef<number | null>(null);
+  const returnedOrderHandledRef = useRef(false);
   const bonusRequestedRef = useRef(false);
   const [storageReady, setStorageReady] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -375,6 +390,7 @@ export default function Home() {
               customerPhone: typeof candidate.customerPhone === "string" ? candidate.customerPhone : undefined,
               status: orderStatuses.includes(candidate.status as OrderStatus) ? candidate.status as OrderStatus : "new",
               paymentStatus: paymentStatuses.includes(candidate.paymentStatus as PaymentStatus) ? candidate.paymentStatus as PaymentStatus : "pending",
+              paymentUrl: typeof candidate.paymentUrl === "string" ? candidate.paymentUrl : undefined,
               updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : undefined,
             });
           }
@@ -427,10 +443,10 @@ export default function Home() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const notify = (message: string) => {
+  const notify = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
-  };
+  }, []);
 
   const openSearch = () => {
     setMobileOpen(false);
@@ -614,7 +630,7 @@ export default function Home() {
     go("cart");
   };
 
-  const checkOrderStatus = async () => {
+  const checkOrderStatus = useCallback(async () => {
     if (!latestOrder) return;
     setOrderStatusOpen(true);
     if (!latestOrder.customerPhone) return;
@@ -640,7 +656,74 @@ export default function Home() {
     } finally {
       setOrderStatusLoading(false);
     }
+  }, [latestOrder, notify]);
+
+  const submitReturnedOrderLookup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!returnedOrderLookup) return;
+
+    const customerPhone = returnedOrderPhone.trim();
+    setOrderStatusLoading(true);
+    setReturnedOrderError("");
+    try {
+      const response = await fetch("/api/orders/status", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          orderNumber: returnedOrderLookup,
+          customerPhone,
+        }),
+      });
+      const payload = await response.json() as {
+        order?: LatestOrder;
+        error?: string;
+      };
+      if (!response.ok || !payload.order) {
+        throw new Error(payload.error ?? "Не удалось найти заказ.");
+      }
+
+      latestOrderExpiresAtRef.current = Date.now() + LATEST_ORDER_TTL_MS;
+      setLatestOrder({ ...payload.order, customerPhone });
+      setReturnedOrderLookup(null);
+      setReturnedOrderPhone("");
+    } catch (error) {
+      setReturnedOrderError(error instanceof Error ? error.message : "Не удалось найти заказ.");
+    } finally {
+      setOrderStatusLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (!storageReady || returnedOrderHandledRef.current) return;
+
+    const url = new URL(window.location.href);
+    const returnedOrderNumber = url.searchParams.get("order")?.trim().toUpperCase() ?? "";
+    returnedOrderHandledRef.current = true;
+
+    if (!returnedOrderNumber) return;
+
+    url.searchParams.delete("order");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+
+    if (!ORDER_NUMBER_PATTERN.test(returnedOrderNumber)) return;
+
+    if (latestOrder?.orderNumber === returnedOrderNumber && latestOrder.customerPhone) {
+      const timer = window.setTimeout(() => void checkOrderStatus(), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const timer = window.setTimeout(() => {
+      setReturnedOrderLookup(returnedOrderNumber);
+      setReturnedOrderPhone("");
+      setReturnedOrderError("");
+      setOrderStatusOpen(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [checkOrderStatus, latestOrder?.customerPhone, latestOrder?.orderNumber, storageReady]);
 
   const submitOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1367,14 +1450,47 @@ export default function Home() {
 
 
 
-      {orderStatusOpen && latestOrder && (
+      {orderStatusOpen && (returnedOrderLookup || latestOrder) && (
         <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="status-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setOrderStatusOpen(false); }}>
           <button className="overlay-close" onClick={() => setOrderStatusOpen(false)} aria-label="Закрыть"><Icon name="close" /></button>
           <section className="dialog-modal order-status-modal">
-            <p className="eyebrow">Заказ {latestOrder.orderNumber}</p>
-            <h2 id="status-title">{orderStatusLabels[latestOrder.status]}</h2>
-            <div className="order-status-card"><span>Оплата</span><b>{paymentStatusLabels[latestOrder.paymentStatus]}</b><span>Сумма</span><b>{money(latestOrder.total)}</b>{latestOrder.updatedAt && <><span>Обновлено</span><b>{new Date(latestOrder.updatedAt).toLocaleString("ru-RU")}</b></>}</div>
-            <button className="button button--navy" type="button" onClick={() => void checkOrderStatus()} disabled={orderStatusLoading || !latestOrder.customerPhone}>{orderStatusLoading ? "Обновляем…" : latestOrder.customerPhone ? "Обновить статус" : "Статус сохранён"}</button>
+            {returnedOrderLookup ? (
+              <>
+                <p className="eyebrow">Заказ {returnedOrderLookup}</p>
+                <h2 id="status-title">Найдём ваш заказ</h2>
+                <form className="dialog-form" onSubmit={submitReturnedOrderLookup}>
+                  <label>
+                    Телефон, указанный при оформлении
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      value={returnedOrderPhone}
+                      onChange={(event) => setReturnedOrderPhone(event.target.value)}
+                      placeholder="+7 900 000-00-00"
+                      required
+                      autoFocus
+                    />
+                  </label>
+                  {returnedOrderError && <p className="account-error" role="alert">{returnedOrderError}</p>}
+                  <div className="dialog-actions">
+                    <button className="button button--navy" type="submit" disabled={orderStatusLoading}>{orderStatusLoading ? "Проверяем…" : "Показать заказ"}</button>
+                  </div>
+                </form>
+              </>
+            ) : latestOrder ? (
+              <>
+                <p className="eyebrow">Заказ {latestOrder.orderNumber}</p>
+                <h2 id="status-title">{orderStatusLabels[latestOrder.status]}</h2>
+                <div className="order-status-card"><span>Оплата</span><b>{paymentStatusLabels[latestOrder.paymentStatus]}</b><span>Сумма</span><b>{money(latestOrder.total)}</b>{latestOrder.updatedAt && <><span>Обновлено</span><b>{new Date(latestOrder.updatedAt).toLocaleString("ru-RU")}</b></>}</div>
+                <div className="dialog-actions">
+                  {isHttpsUrl(latestOrder.paymentUrl) && latestOrder.paymentStatus !== "paid" && latestOrder.paymentStatus !== "refunded" && (
+                    <a className="button button--navy" href={latestOrder.paymentUrl} referrerPolicy="no-referrer">Оплатить через СБП</a>
+                  )}
+                  <button className="button button--navy" type="button" onClick={() => void checkOrderStatus()} disabled={orderStatusLoading || !latestOrder.customerPhone}>{orderStatusLoading ? "Обновляем…" : latestOrder.customerPhone ? "Обновить статус" : "Статус сохранён"}</button>
+                </div>
+              </>
+            ) : null}
           </section>
         </div>
       )}

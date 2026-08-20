@@ -176,8 +176,27 @@ function OrderEditor({
   );
   const [adminNote, setAdminNote] = useState(order.adminNote);
   const [saving, setSaving] = useState(false);
+  const [creatingPayment, setCreatingPayment] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const paymentUrl = order.yookassaPaymentUrl?.trim() ?? "";
+  const paymentAttemptExists = Boolean(
+    order.yookassaPaymentId
+    || paymentUrl
+    || typeof order.yookassaPaymentAmount === "number",
+  );
+  const hasSavedDelivery = order.deliveryMethod === "pickup" || order.deliveryFee !== null;
+  const deliveryValue = deliveryFee === "" ? null : Number(deliveryFee);
+  const paymentFieldsAreSaved = status === order.status
+    && paymentStatus === order.paymentStatus
+    && (order.deliveryMethod === "pickup" || deliveryValue === order.deliveryFee)
+    && adminNote === order.adminNote;
+  const paymentCanBeCreated = !archived
+    && order.status !== "cancelled"
+    && order.paymentStatus !== "paid"
+    && order.paymentStatus !== "refunded"
+    && (order.paymentStatus === "pending" || paymentAttemptExists);
+  const storedPaymentLinkExists = Boolean(paymentUrl && order.status !== "cancelled");
 
   const save = async (nextStatus: OrderStatus = status) => {
     setSaving(true);
@@ -202,6 +221,66 @@ function OrderEditor({
       setError(cause instanceof Error ? cause.message : "Не удалось сохранить заказ.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const createPayment = async () => {
+    setCreatingPayment(true);
+    setError("");
+    setWarning("");
+    try {
+      const response = await fetch(`/api/admin/orders/${order.id}/payment`, {
+        method: "POST",
+      });
+      const payload = await readJson<{ order: Order }>(response);
+      setStatus(payload.order.status);
+      setPaymentStatus(payload.order.paymentStatus);
+      setDeliveryFee(
+        payload.order.deliveryFee === null ? "" : String(payload.order.deliveryFee),
+      );
+      onSaved(payload.order);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось создать оплату.");
+    } finally {
+      setCreatingPayment(false);
+    }
+  };
+
+  const copyPaymentLink = async () => {
+    if (!paymentUrl) return;
+    setError("");
+    setWarning("");
+
+    try {
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(paymentUrl);
+          copied = true;
+        } catch {
+          copied = false;
+        }
+      }
+
+      if (!copied) {
+        const textarea = document.createElement("textarea");
+        textarea.value = paymentUrl;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.append(textarea);
+        textarea.select();
+        copied = document.execCommand("copy");
+        textarea.remove();
+        if (!copied) throw new Error("Копирование недоступно в этом браузере.");
+      }
+      setWarning("Ссылка на оплату скопирована.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Не удалось скопировать ссылку на оплату.",
+      );
     }
   };
 
@@ -273,7 +352,7 @@ function OrderEditor({
           Этап заказа
           <select
             value={status}
-            disabled={archived}
+            disabled={archived || saving || creatingPayment}
             onChange={(event) => setStatus(event.target.value as OrderStatus)}
           >
             {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -283,7 +362,7 @@ function OrderEditor({
           Оплата
           <select
             value={paymentStatus}
-            disabled={archived}
+            disabled={archived || saving || creatingPayment || paymentAttemptExists}
             onChange={(event) => setPaymentStatus(event.target.value as PaymentStatus)}
           >
             {Object.entries(paymentLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -295,7 +374,13 @@ function OrderEditor({
             type="number"
             min="0"
             value={deliveryFee}
-            disabled={archived || order.deliveryMethod === "pickup"}
+            disabled={
+              archived
+              || saving
+              || creatingPayment
+              || paymentAttemptExists
+              || order.deliveryMethod === "pickup"
+            }
             placeholder="Указать вручную"
             onChange={(event) => setDeliveryFee(event.target.value)}
           />
@@ -314,18 +399,66 @@ function OrderEditor({
             className="admin-restore"
             type="button"
             onClick={() => void save("confirmed")}
-            disabled={saving}
+            disabled={saving || creatingPayment}
           >
             {saving ? "Возвращаем…" : "Вернуть в работу"}
           </button>
         ) : archived ? (
           <p className="admin-archive-note">Отменённый заказ хранится в архиве без повторного открытия.</p>
         ) : (
-          <button className="admin-primary" type="button" onClick={() => void save()} disabled={saving}>
+          <button
+            className="admin-primary"
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || creatingPayment}
+          >
             {saving ? "Сохраняем…" : "Сохранить заказ"}
           </button>
         )}
       </div>
+      {storedPaymentLinkExists ? (
+        <div className="admin-order__payment-actions">
+          <b>
+            {order.paymentStatus === "paid"
+              ? "Оплата через СБП подтверждена."
+              : "Ссылка на оплату через СБП создана."}
+          </b>
+          <button
+            className="admin-secondary"
+            type="button"
+            onClick={() => void copyPaymentLink()}
+          >
+            Скопировать ссылку на оплату
+          </button>
+        </div>
+      ) : paymentCanBeCreated ? (
+        <div className="admin-order__payment-actions">
+          <span>
+            {!hasSavedDelivery
+              ? "Сначала укажите стоимость доставки и сохраните заказ."
+              : !paymentFieldsAreSaved && !paymentAttemptExists
+                ? "Сначала сохраните изменения заказа."
+                : "Сумма оплаты будет рассчитана сервером из заказа и доставки."}
+          </span>
+          <button
+            className="admin-secondary"
+            type="button"
+            onClick={() => void createPayment()}
+            disabled={
+              saving
+              || creatingPayment
+              || !hasSavedDelivery
+              || !paymentFieldsAreSaved
+            }
+          >
+            {creatingPayment
+              ? "Создаём оплату…"
+              : paymentAttemptExists
+                ? "Повторить создание оплаты"
+                : "Создать оплату"}
+          </button>
+        </div>
+      ) : null}
       {warning && <p className="admin-warning" role="status">{warning}</p>}
       {error && <p className="admin-error" role="alert">{error}</p>}
     </article>

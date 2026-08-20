@@ -35,6 +35,8 @@ import type {
 type StoredOrder = Order & {
   idempotencyKeyHash?: string;
   idempotencyFingerprintHash?: string;
+  yookassaIdempotenceKey?: string | null;
+  yookassaAttemptCreatedAt?: string | null;
 };
 
 type CreateOrderOptions = {
@@ -86,6 +88,11 @@ type OrderRow = {
   order_number: string;
   status: OrderStatus;
   payment_status: PaymentStatus;
+  yookassa_payment_id: string | null;
+  yookassa_payment_url: string | null;
+  yookassa_idempotence_key: string | null;
+  yookassa_payment_amount: number | null;
+  yookassa_attempt_created_at: string | null;
   delivery_method: "delivery" | "pickup";
   delivery_fee: number | null;
   card_added: boolean;
@@ -235,6 +242,12 @@ function orderFromRow(row: OrderRow): StoredOrder {
     orderNumber: row.order_number,
     status: row.status,
     paymentStatus: row.payment_status,
+    yookassaPaymentId: row.yookassa_payment_id ?? null,
+    yookassaPaymentUrl: row.yookassa_payment_url ?? null,
+    yookassaPaymentAmount:
+      row.yookassa_payment_amount === null || row.yookassa_payment_amount === undefined
+        ? null
+        : Number(row.yookassa_payment_amount),
     deliveryMethod: row.delivery_method,
     deliveryFee: row.delivery_fee,
     cardAdded: row.card_added,
@@ -267,6 +280,12 @@ function orderFromRow(row: OrderRow): StoredOrder {
     ...(row.idempotency_fingerprint_hash
       ? { idempotencyFingerprintHash: row.idempotency_fingerprint_hash }
       : {}),
+    ...(row.yookassa_idempotence_key
+      ? { yookassaIdempotenceKey: row.yookassa_idempotence_key }
+      : {}),
+    ...(row.yookassa_attempt_created_at
+      ? { yookassaAttemptCreatedAt: row.yookassa_attempt_created_at }
+      : {}),
   };
 }
 
@@ -276,6 +295,11 @@ function orderToRow(order: StoredOrder) {
     order_number: order.orderNumber,
     status: order.status,
     payment_status: order.paymentStatus,
+    yookassa_payment_id: order.yookassaPaymentId ?? null,
+    yookassa_payment_url: order.yookassaPaymentUrl ?? null,
+    yookassa_idempotence_key: order.yookassaIdempotenceKey ?? null,
+    yookassa_payment_amount: order.yookassaPaymentAmount ?? null,
+    yookassa_attempt_created_at: order.yookassaAttemptCreatedAt ?? null,
     delivery_method: order.deliveryMethod,
     delivery_fee: order.deliveryFee,
     card_added: Boolean(order.cardAdded),
@@ -311,10 +335,14 @@ function cloneOrder(order: StoredOrder): Order {
   const {
     idempotencyKeyHash: _internalIdempotencyKey,
     idempotencyFingerprintHash: _internalIdempotencyFingerprint,
+    yookassaIdempotenceKey: _internalYooKassaIdempotenceKey,
+    yookassaAttemptCreatedAt: _internalYooKassaAttemptCreatedAt,
     ...safeOrder
   } = order;
   void _internalIdempotencyKey;
   void _internalIdempotencyFingerprint;
+  void _internalYooKassaIdempotenceKey;
+  void _internalYooKassaAttemptCreatedAt;
   return {
     ...safeOrder,
     items: order.items.map((item) => ({
@@ -325,6 +353,69 @@ function cloneOrder(order: StoredOrder): Order {
         : undefined,
     })),
   };
+}
+
+async function syncAndPersistOrderBonuses(
+  client: ReturnType<typeof db>,
+  initialOrder: StoredOrder,
+  expectedPaymentId?: string,
+): Promise<Order | null> {
+  let current = initialOrder;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (
+      expectedPaymentId !== undefined
+      && current.yookassaPaymentId !== expectedPaymentId
+    ) {
+      return null;
+    }
+
+    const bonusResult = await syncOrderBonuses(current);
+    if (!bonusResult) return cloneOrder(current);
+
+    const bonusSpent = Math.max(0, Math.trunc(bonusResult.spent));
+    const bonusEarned = Math.max(0, Math.trunc(bonusResult.earned));
+    if (
+      bonusSpent === (current.bonusSpent ?? 0)
+      && bonusEarned === (current.bonusEarned ?? 0)
+    ) {
+      return cloneOrder(current);
+    }
+
+    let updateQuery = client
+      .from("orders")
+      .update({
+        bonus_spent: bonusSpent,
+        bonus_earned: bonusEarned,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", current.id)
+      .eq("updated_at", current.updatedAt);
+    if (expectedPaymentId !== undefined) {
+      updateQuery = updateQuery.eq("yookassa_payment_id", expectedPaymentId);
+    }
+
+    const { data: savedRows, error: updateError } = await updateQuery
+      .select("*")
+      .limit(1);
+    if (updateError) throw updateError;
+    if (savedRows?.length) {
+      return cloneOrder(orderFromRow(savedRows[0] as OrderRow));
+    }
+
+    const { data: latest, error: readError } = await client
+      .from("orders")
+      .select("*")
+      .eq("id", current.id)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!latest) return null;
+    current = orderFromRow(latest as OrderRow);
+  }
+
+  throw new StoreConflictError(
+    "Заказ изменился во время синхронизации бонусов. Повторите действие.",
+  );
 }
 
 export async function listProducts(includeHidden = false): Promise<Product[]> {
@@ -417,6 +508,413 @@ export async function getOrderById(id: string): Promise<Order | null> {
   return data ? cloneOrder(orderFromRow(data as OrderRow)) : null;
 }
 
+export type YooKassaPaymentPreparation = {
+  order: Order;
+  idempotenceKey: string;
+  amountRubles: number;
+  existingPayment: boolean;
+  reconcilePaymentId?: string;
+};
+
+export function calculateStoredOrderTotal(order: Order) {
+  let itemsSubtotal = 0;
+  for (const item of order.items) {
+    if (
+      !Number.isSafeInteger(item.price)
+      || item.price < 0
+      || !Number.isSafeInteger(item.quantity)
+      || item.quantity <= 0
+    ) {
+      throw new StoreValidationError("В заказе сохранена некорректная позиция.");
+    }
+    const lineTotal = item.price * item.quantity;
+    if (!Number.isSafeInteger(lineTotal)) {
+      throw new StoreValidationError("Сумма позиции заказа слишком большая.");
+    }
+    itemsSubtotal += lineTotal;
+    if (!Number.isSafeInteger(itemsSubtotal)) {
+      throw new StoreValidationError("Сумма товаров заказа слишком большая.");
+    }
+  }
+
+  const cardAmount = order.cardFee ?? 0;
+  const deliveryAmount = order.deliveryMethod === "pickup" ? 0 : order.deliveryFee;
+  if (
+    !order.items.length
+    || !Number.isSafeInteger(order.subtotal)
+    || order.subtotal !== itemsSubtotal
+    || !Number.isSafeInteger(order.discount)
+    || order.discount < 0
+    || !Number.isSafeInteger(cardAmount)
+    || cardAmount < 0
+    || deliveryAmount === null
+    || !Number.isSafeInteger(deliveryAmount)
+    || deliveryAmount < 0
+  ) {
+    throw new StoreValidationError("Сохранённая сумма заказа требует проверки.");
+  }
+
+  const total = itemsSubtotal - order.discount + cardAmount + deliveryAmount;
+  if (!Number.isSafeInteger(total) || total <= 0 || total !== order.total) {
+    throw new StoreValidationError("Итоговая сумма заказа требует проверки.");
+  }
+  return total;
+}
+
+function assertOrderCanCreateYooKassaPayment(order: StoredOrder) {
+  if (order.status === "cancelled") {
+    throw new StoreValidationError("Для отменённого заказа нельзя создать оплату.");
+  }
+  if (order.paymentStatus === "paid") {
+    throw new StoreValidationError("Заказ уже оплачен.");
+  }
+  if (order.paymentStatus === "refunded") {
+    throw new StoreValidationError("Для заказа с возвратом нельзя создать новую оплату.");
+  }
+  if (order.deliveryMethod === "delivery" && order.deliveryFee === null) {
+    throw new StoreValidationError("Сначала укажите стоимость доставки и сохраните заказ.");
+  }
+  return calculateStoredOrderTotal(order);
+}
+
+export async function prepareYooKassaPayment(
+  id: string,
+): Promise<YooKassaPaymentPreparation> {
+  const client = db();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await client
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new StoreNotFoundError("Заказ не найден.");
+
+    const current = orderFromRow(data as OrderRow);
+    const calculatedAmount = assertOrderCanCreateYooKassaPayment(current);
+
+    const hasPaymentId = Boolean(current.yookassaPaymentId);
+    const hasPaymentUrl = Boolean(current.yookassaPaymentUrl);
+    if (!hasPaymentId && hasPaymentUrl) {
+      throw new StoreConflictError(
+        "Данные оплаты заказа неполные. Проверьте заказ перед повторной оплатой.",
+      );
+    }
+    if (hasPaymentId) {
+      if (
+        !current.yookassaIdempotenceKey
+        || !current.yookassaAttemptCreatedAt
+        || current.yookassaPaymentAmount !== calculatedAmount
+      ) {
+        throw new StoreConflictError(
+          "Платёж заказа требует ручной проверки перед повторной оплатой.",
+        );
+      }
+      if (hasPaymentUrl) {
+        return {
+          order: cloneOrder(current),
+          idempotenceKey: current.yookassaIdempotenceKey,
+          amountRubles: calculatedAmount,
+          existingPayment: true,
+        };
+      }
+      if (current.paymentStatus === "invoice_sent") {
+        return {
+          order: cloneOrder(current),
+          idempotenceKey: current.yookassaIdempotenceKey,
+          amountRubles: calculatedAmount,
+          existingPayment: false,
+          reconcilePaymentId: current.yookassaPaymentId as string,
+        };
+      }
+      throw new StoreConflictError(
+        "Платёж заказа требует ручной проверки перед повторной оплатой.",
+      );
+    }
+    if (current.paymentStatus === "invoice_sent") {
+      throw new StoreConflictError(
+        "Для заказа уже отмечен выставленный счёт. Проверьте его перед созданием оплаты.",
+      );
+    }
+
+    const hasAttemptKey = Boolean(current.yookassaIdempotenceKey);
+    const hasAttemptAmount = current.yookassaPaymentAmount !== null
+      && current.yookassaPaymentAmount !== undefined;
+    const hasAttemptTimestamp = Boolean(current.yookassaAttemptCreatedAt);
+    if (
+      hasAttemptKey !== hasAttemptAmount
+      || hasAttemptKey !== hasAttemptTimestamp
+    ) {
+      throw new StoreConflictError(
+        "Данные попытки оплаты неполные. Обновите заказ и повторите действие.",
+      );
+    }
+    if (hasAttemptKey && hasAttemptAmount) {
+      const attemptCreatedAt = Date.parse(current.yookassaAttemptCreatedAt as string);
+      const attemptAge = Date.now() - attemptCreatedAt;
+      if (
+        !Number.isFinite(attemptCreatedAt)
+        || attemptAge < -5 * 60_000
+        || attemptAge >= 23 * 60 * 60_000
+      ) {
+        throw new StoreConflictError(
+          "Безопасный срок повтора оплаты истёк. Проверьте платёж в кабинете ЮKassa перед новой попыткой.",
+        );
+      }
+      if (current.yookassaPaymentAmount !== calculatedAmount) {
+        throw new StoreConflictError(
+          "Сумма заказа изменилась после подготовки оплаты. Требуется ручная проверка.",
+        );
+      }
+      return {
+        order: cloneOrder(current),
+        idempotenceKey: current.yookassaIdempotenceKey as string,
+        amountRubles: calculatedAmount,
+        existingPayment: false,
+      };
+    }
+
+    const idempotenceKey = randomUUID();
+    const updatedAt = new Date().toISOString();
+    const { data: savedRows, error: updateError } = await client
+      .from("orders")
+      .update({
+        yookassa_idempotence_key: idempotenceKey,
+        yookassa_payment_amount: calculatedAmount,
+        yookassa_attempt_created_at: updatedAt,
+        updated_at: updatedAt,
+      })
+      .eq("id", id)
+      .eq("updated_at", current.updatedAt)
+      .eq("total", calculatedAmount)
+      .eq("payment_status", "pending")
+      .neq("status", "cancelled")
+      .is("yookassa_payment_id", null)
+      .is("yookassa_payment_url", null)
+      .is("yookassa_idempotence_key", null)
+      .select("*")
+      .limit(1);
+    if (updateError) throw updateError;
+    if (!savedRows?.length) continue;
+
+    const saved = orderFromRow(savedRows[0] as OrderRow);
+    return {
+      order: cloneOrder(saved),
+      idempotenceKey,
+      amountRubles: calculatedAmount,
+      existingPayment: false,
+    };
+  }
+
+  throw new StoreConflictError(
+    "Заказ изменился во время создания оплаты. Обновите данные и повторите действие.",
+  );
+}
+
+export async function saveYooKassaPayment(
+  id: string,
+  idempotenceKey: string,
+  payment: { id: string; confirmationUrl?: string | null; amountRubles: number },
+): Promise<Order> {
+  if (
+    !/^[0-9A-Za-z-]{10,128}$/.test(payment.id)
+    || !Number.isSafeInteger(payment.amountRubles)
+    || payment.amountRubles <= 0
+  ) {
+    throw new StoreValidationError("ЮKassa вернула некорректные данные платежа.");
+  }
+
+  let confirmationUrl: URL | null = null;
+  if (payment.confirmationUrl) {
+    try {
+      confirmationUrl = new URL(payment.confirmationUrl);
+    } catch {
+      throw new StoreValidationError("ЮKassa вернула некорректную ссылку на оплату.");
+    }
+    if (
+      confirmationUrl.protocol !== "https:"
+      || confirmationUrl.username
+      || confirmationUrl.password
+      || confirmationUrl.toString().length > 2_048
+    ) {
+      throw new StoreValidationError("ЮKassa вернула некорректную ссылку на оплату.");
+    }
+  }
+
+  const client = db();
+  const updatedAt = new Date().toISOString();
+  const { data: savedRows, error } = await client
+    .from("orders")
+    .update({
+      payment_status: "invoice_sent",
+      yookassa_payment_id: payment.id,
+      yookassa_payment_url: confirmationUrl?.toString() ?? null,
+      updated_at: updatedAt,
+    })
+    .eq("id", id)
+    .eq("payment_status", "pending")
+    .neq("status", "cancelled")
+    .eq("total", payment.amountRubles)
+    .eq("yookassa_payment_amount", payment.amountRubles)
+    .eq("yookassa_idempotence_key", idempotenceKey)
+    .is("yookassa_payment_id", null)
+    .is("yookassa_payment_url", null)
+    .select("*")
+    .limit(1);
+  if (error) throw error;
+  if (savedRows?.length) {
+    return cloneOrder(orderFromRow(savedRows[0] as OrderRow));
+  }
+
+  const { data: existing, error: readError } = await client
+    .from("orders")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!existing) throw new StoreNotFoundError("Заказ не найден.");
+  const current = orderFromRow(existing as OrderRow);
+  if (
+    current.yookassaPaymentId === payment.id
+    && current.yookassaPaymentUrl === (confirmationUrl?.toString() ?? null)
+  ) {
+    return cloneOrder(current);
+  }
+  if (
+    current.yookassaPaymentId === payment.id
+    && current.yookassaPaymentUrl === null
+    && confirmationUrl
+  ) {
+    const { data: restoredRows, error: restoreError } = await client
+      .from("orders")
+      .update({
+        yookassa_payment_url: confirmationUrl.toString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("payment_status", "invoice_sent")
+      .eq("yookassa_payment_id", payment.id)
+      .eq("yookassa_idempotence_key", idempotenceKey)
+      .eq("yookassa_payment_amount", payment.amountRubles)
+      .is("yookassa_payment_url", null)
+      .select("*")
+      .limit(1);
+    if (restoreError) throw restoreError;
+    if (restoredRows?.length) {
+      return cloneOrder(orderFromRow(restoredRows[0] as OrderRow));
+    }
+  }
+  throw new StoreConflictError(
+    "Заказ изменился во время создания оплаты. Платёж требует ручной проверки.",
+  );
+}
+
+export async function releaseYooKassaPaymentPreparation(
+  id: string,
+  idempotenceKey: string,
+) {
+  const { error } = await db()
+    .from("orders")
+    .update({
+      yookassa_idempotence_key: null,
+      yookassa_payment_amount: null,
+      yookassa_attempt_created_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("payment_status", "pending")
+    .eq("yookassa_idempotence_key", idempotenceKey)
+    .is("yookassa_payment_id", null)
+    .is("yookassa_payment_url", null);
+  if (error) throw error;
+}
+
+export async function getOrderByYooKassaPaymentId(
+  paymentId: string,
+): Promise<Order | null> {
+  const { data, error } = await db()
+    .from("orders")
+    .select("*")
+    .eq("yookassa_payment_id", paymentId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? cloneOrder(orderFromRow(data as OrderRow)) : null;
+}
+
+export async function markYooKassaPaymentSucceeded(
+  orderId: string,
+  paymentId: string,
+): Promise<Order | null> {
+  const client = db();
+  const { data, error } = await client
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .eq("yookassa_payment_id", paymentId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  let current = orderFromRow(data as OrderRow);
+  if (current.paymentStatus === "refunded") return cloneOrder(current);
+
+  if (current.paymentStatus !== "paid") {
+    const { data: savedRows, error: updateError } = await client
+      .from("orders")
+      .update({
+        payment_status: "paid",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", orderId)
+      .eq("yookassa_payment_id", paymentId)
+      .neq("payment_status", "refunded")
+      .select("*")
+      .limit(1);
+    if (updateError) throw updateError;
+    if (!savedRows?.length) return null;
+    current = orderFromRow(savedRows[0] as OrderRow);
+  }
+
+  return syncAndPersistOrderBonuses(client, current, paymentId);
+}
+
+export async function markYooKassaPaymentCanceled(
+  orderId: string,
+  paymentId: string,
+): Promise<Order | null> {
+  const client = db();
+  const { data: savedRows, error } = await client
+    .from("orders")
+    .update({
+      payment_status: "pending",
+      yookassa_payment_id: null,
+      yookassa_payment_url: null,
+      yookassa_idempotence_key: null,
+      yookassa_payment_amount: null,
+      yookassa_attempt_created_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderId)
+    .eq("yookassa_payment_id", paymentId)
+    .in("payment_status", ["pending", "invoice_sent"])
+    .select("*")
+    .limit(1);
+  if (error) throw error;
+  if (savedRows?.length) {
+    return cloneOrder(orderFromRow(savedRows[0] as OrderRow));
+  }
+
+  const { data: current, error: readError } = await client
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .eq("yookassa_payment_id", paymentId)
+    .maybeSingle();
+  if (readError) throw readError;
+  return current ? cloneOrder(orderFromRow(current as OrderRow)) : null;
+}
+
 export async function getOrderStatus(orderNumber: string, customerPhone: string) {
   const normalizedNumber = orderNumber.trim().toUpperCase();
   const normalizedPhone = customerPhone.replace(/\D/g, "");
@@ -424,7 +922,7 @@ export async function getOrderStatus(orderNumber: string, customerPhone: string)
 
   const { data, error } = await db()
     .from("orders")
-    .select("order_number,total,status,payment_status,customer_phone,updated_at")
+    .select("order_number,total,status,payment_status,yookassa_payment_url,customer_phone,updated_at")
     .eq("order_number", normalizedNumber)
     .maybeSingle();
   if (error) throw error;
@@ -437,6 +935,12 @@ export async function getOrderStatus(orderNumber: string, customerPhone: string)
     total: Number(data.total),
     status: data.status as OrderStatus,
     paymentStatus: data.payment_status as PaymentStatus,
+    paymentUrl:
+      data.status !== "cancelled"
+      && data.payment_status === "invoice_sent"
+      && typeof data.yookassa_payment_url === "string"
+        ? data.yookassa_payment_url
+        : null,
     updatedAt: data.updated_at as string,
   };
 }
@@ -735,6 +1239,35 @@ export async function updateOrderAndSyncBonuses(
   }
 
   const deliveryFee = current.deliveryMethod === "pickup" ? 0 : patch.deliveryFee;
+  const hasYooKassaAttempt = Boolean(
+    current.yookassaIdempotenceKey
+    || current.yookassaPaymentId
+    || current.yookassaPaymentUrl
+    || (
+      current.yookassaPaymentAmount !== null
+      && current.yookassaPaymentAmount !== undefined
+    ),
+  );
+  if (hasYooKassaAttempt && deliveryFee !== current.deliveryFee) {
+    throw new StoreConflictError(
+      "Стоимость доставки зафиксирована для оплаты ЮKassa и не может быть изменена.",
+    );
+  }
+  if (hasYooKassaAttempt && patch.paymentStatus !== current.paymentStatus) {
+    throw new StoreConflictError(
+      "Статус оплаты ЮKassa обновляется автоматически после проверки платежа.",
+    );
+  }
+  if (
+    hasYooKassaAttempt
+    && current.status !== "cancelled"
+    && patch.status === "cancelled"
+  ) {
+    throw new StoreConflictError(
+      "Нельзя отменить заказ, пока платёж ЮKassa активен или проверяется.",
+    );
+  }
+
   const changed: StoredOrder = {
     ...current,
     status: patch.status,
@@ -748,16 +1281,9 @@ export async function updateOrderAndSyncBonuses(
     updatedAt: new Date().toISOString(),
   };
 
-  const bonusResult = await syncOrderBonuses(changed);
-  const updated: StoredOrder = bonusResult
-    ? {
-      ...changed,
-      bonusSpent: Math.max(0, Math.trunc(bonusResult.spent)),
-      bonusEarned: Math.max(0, Math.trunc(bonusResult.earned)),
-    }
-    : changed;
-
-  const updatePayload = orderToRow(updated);
+  // First win the optimistic order update. Bonus RPCs commit independently,
+  // so running them before this CAS could mutate the ledger for a lost race.
+  const updatePayload = orderToRow(changed);
   delete (updatePayload as Partial<OrderRow>).id;
   delete (updatePayload as Partial<OrderRow>).created_at;
 
@@ -779,5 +1305,6 @@ export async function updateOrderAndSyncBonuses(
     );
   }
 
-  return cloneOrder(orderFromRow(savedRows[0] as OrderRow));
+  const saved = orderFromRow(savedRows[0] as OrderRow);
+  return (await syncAndPersistOrderBonuses(client, saved)) ?? cloneOrder(saved);
 }

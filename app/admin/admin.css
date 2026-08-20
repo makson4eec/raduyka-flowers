@@ -602,6 +602,27 @@
   flex-grow: 1.7 !important;
 }
 
+.admin-order__payment-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.admin-order__payment-actions > :first-child {
+  margin-right: auto;
+  color: #656a77;
+  font-size: 0.82rem;
+}
+
+.admin-order__payment-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .admin-order select,
 .admin-order input,
 .admin-product-form input,
@@ -968,8 +989,14 @@
   }
 
   .admin-order__controls .admin-primary,
-  .admin-order__controls .admin-restore {
+  .admin-order__controls .admin-restore,
+  .admin-order__payment-actions .admin-secondary {
     flex: 1 1 100%;
+  }
+
+  .admin-order__payment-actions {
+    align-items: stretch;
+    flex-wrap: wrap;
   }
 }
 

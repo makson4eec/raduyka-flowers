@@ -74,6 +74,11 @@ create table if not exists public.orders (
   order_number text not null unique,
   status text not null check (status in ('new','confirmed','assembling','ready','delivery','completed','cancelled')),
   payment_status text not null check (payment_status in ('pending','invoice_sent','paid','refunded')),
+  yookassa_payment_id text,
+  yookassa_payment_url text,
+  yookassa_idempotence_key uuid,
+  yookassa_payment_amount integer,
+  yookassa_attempt_created_at timestamptz,
   delivery_method text not null check (delivery_method in ('delivery','pickup')),
   delivery_fee integer,
   card_added boolean not null default false,
@@ -107,11 +112,47 @@ create table if not exists public.orders (
 alter table public.orders
   add column if not exists privacy_notice_version text,
   add column if not exists offer_version text,
-  add column if not exists legal_accepted_at timestamptz;
+  add column if not exists legal_accepted_at timestamptz,
+  add column if not exists yookassa_payment_id text,
+  add column if not exists yookassa_payment_url text,
+  add column if not exists yookassa_idempotence_key uuid,
+  add column if not exists yookassa_payment_amount integer,
+  add column if not exists yookassa_attempt_created_at timestamptz;
+
+alter table public.orders
+  drop constraint if exists orders_yookassa_payment_pair_check,
+  drop constraint if exists orders_yookassa_attempt_pair_check,
+  drop constraint if exists orders_yookassa_payment_amount_check,
+  drop constraint if exists orders_yookassa_payment_attempt_check;
+
+update public.orders
+set yookassa_attempt_created_at = coalesce(updated_at, now())
+where yookassa_idempotence_key is not null
+  and yookassa_payment_amount is not null
+  and yookassa_attempt_created_at is null;
+
+alter table public.orders
+  add constraint orders_yookassa_payment_pair_check
+    check (yookassa_payment_url is null or yookassa_payment_id is not null),
+  add constraint orders_yookassa_attempt_pair_check
+    check (
+      (yookassa_idempotence_key is null) = (yookassa_payment_amount is null)
+      and (yookassa_idempotence_key is null) = (yookassa_attempt_created_at is null)
+    ),
+  add constraint orders_yookassa_payment_amount_check
+    check (
+      yookassa_payment_amount is null
+      or (yookassa_payment_amount > 0 and yookassa_payment_amount = total)
+    ),
+  add constraint orders_yookassa_payment_attempt_check
+    check (yookassa_payment_id is null or yookassa_idempotence_key is not null);
 
 create index if not exists products_sort_idx on public.products(sort_order, id);
 create index if not exists orders_created_idx on public.orders(created_at desc);
 create index if not exists orders_customer_user_idx on public.orders(customer_user_id, created_at desc);
+create unique index if not exists orders_yookassa_payment_id_uidx
+  on public.orders(yookassa_payment_id)
+  where yookassa_payment_id is not null;
 
 alter table public.products enable row level security;
 alter table public.orders enable row level security;
