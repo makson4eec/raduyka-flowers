@@ -617,6 +617,7 @@ export async function prepareYooKassaPayment(
           idempotenceKey: current.yookassaIdempotenceKey,
           amountRubles: calculatedAmount,
           existingPayment: true,
+          reconcilePaymentId: current.yookassaPaymentId as string,
         };
       }
       if (current.paymentStatus === "invoice_sent") {
@@ -632,12 +633,6 @@ export async function prepareYooKassaPayment(
         "Платёж заказа требует ручной проверки перед повторной оплатой.",
       );
     }
-    if (current.paymentStatus === "invoice_sent") {
-      throw new StoreConflictError(
-        "Для заказа уже отмечен выставленный счёт. Проверьте его перед созданием оплаты.",
-      );
-    }
-
     const hasAttemptKey = Boolean(current.yookassaIdempotenceKey);
     const hasAttemptAmount = current.yookassaPaymentAmount !== null
       && current.yookassaPaymentAmount !== undefined;
@@ -680,6 +675,7 @@ export async function prepareYooKassaPayment(
     const { data: savedRows, error: updateError } = await client
       .from("orders")
       .update({
+        payment_status: "pending",
         yookassa_idempotence_key: idempotenceKey,
         yookassa_payment_amount: calculatedAmount,
         yookassa_attempt_created_at: updatedAt,
@@ -688,7 +684,7 @@ export async function prepareYooKassaPayment(
       .eq("id", id)
       .eq("updated_at", current.updatedAt)
       .eq("total", calculatedAmount)
-      .eq("payment_status", "pending")
+      .in("payment_status", ["pending", "invoice_sent"])
       .neq("status", "cancelled")
       .is("yookassa_payment_id", null)
       .is("yookassa_payment_url", null)
@@ -868,12 +864,25 @@ export async function markYooKassaPaymentSucceeded(
       })
       .eq("id", orderId)
       .eq("yookassa_payment_id", paymentId)
-      .neq("payment_status", "refunded")
+      .in("payment_status", ["pending", "invoice_sent"])
       .select("*")
       .limit(1);
     if (updateError) throw updateError;
-    if (!savedRows?.length) return null;
-    current = orderFromRow(savedRows[0] as OrderRow);
+    if (savedRows?.length) {
+      current = orderFromRow(savedRows[0] as OrderRow);
+    } else {
+      const { data: latest, error: latestError } = await client
+        .from("orders")
+        .select("*")
+        .eq("id", orderId)
+        .eq("yookassa_payment_id", paymentId)
+        .maybeSingle();
+      if (latestError) throw latestError;
+      if (!latest) return null;
+      current = orderFromRow(latest as OrderRow);
+      if (current.paymentStatus === "refunded") return cloneOrder(current);
+      if (current.paymentStatus !== "paid") return null;
+    }
   }
 
   return syncAndPersistOrderBonuses(client, current, paymentId);
@@ -915,34 +924,49 @@ export async function markYooKassaPaymentCanceled(
   return current ? cloneOrder(orderFromRow(current as OrderRow)) : null;
 }
 
-export async function getOrderStatus(orderNumber: string, customerPhone: string) {
+export function publicOrderStatus(order: Order) {
+  return {
+    orderNumber: order.orderNumber,
+    total: order.total,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    paymentUrl:
+      order.status !== "cancelled"
+      && order.paymentStatus === "invoice_sent"
+      && typeof order.yookassaPaymentUrl === "string"
+        ? order.yookassaPaymentUrl
+        : null,
+    updatedAt: order.updatedAt,
+  };
+}
+
+export async function getOrderForCustomerStatus(
+  orderNumber: string,
+  customerPhone: string,
+): Promise<Order | null> {
   const normalizedNumber = orderNumber.trim().toUpperCase();
   const normalizedPhone = customerPhone.replace(/\D/g, "");
   if (!normalizedNumber || normalizedPhone.length < 7) return null;
 
   const { data, error } = await db()
     .from("orders")
-    .select("order_number,total,status,payment_status,yookassa_payment_url,customer_phone,updated_at")
+    .select("*")
     .eq("order_number", normalizedNumber)
     .maybeSingle();
   if (error) throw error;
-  if (!data || String(data.customer_phone).replace(/\D/g, "") !== normalizedPhone) {
+  if (!data) return null;
+
+  const order = orderFromRow(data as OrderRow);
+  if (order.customerPhone.replace(/\D/g, "") !== normalizedPhone) {
     return null;
   }
 
-  return {
-    orderNumber: data.order_number as string,
-    total: Number(data.total),
-    status: data.status as OrderStatus,
-    paymentStatus: data.payment_status as PaymentStatus,
-    paymentUrl:
-      data.status !== "cancelled"
-      && data.payment_status === "invoice_sent"
-      && typeof data.yookassa_payment_url === "string"
-        ? data.yookassa_payment_url
-        : null,
-    updatedAt: data.updated_at as string,
-  };
+  return cloneOrder(order);
+}
+
+export async function getOrderStatus(orderNumber: string, customerPhone: string) {
+  const order = await getOrderForCustomerStatus(orderNumber, customerPhone);
+  return order ? publicOrderStatus(order) : null;
 }
 
 async function existingOrderByIdempotency(
@@ -1248,6 +1272,15 @@ export async function updateOrderAndSyncBonuses(
       && current.yookassaPaymentAmount !== undefined
     ),
   );
+  if (
+    !hasYooKassaAttempt
+    && current.paymentStatus !== "invoice_sent"
+    && patch.paymentStatus === "invoice_sent"
+  ) {
+    throw new StoreValidationError(
+      "Используйте кнопку «Выставить оплату СБП»: статус счёта установится после ответа ЮKassa.",
+    );
+  }
   if (hasYooKassaAttempt && deliveryFee !== current.deliveryFee) {
     throw new StoreConflictError(
       "Стоимость доставки зафиксирована для оплаты ЮKassa и не может быть изменена.",

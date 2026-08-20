@@ -1483,9 +1483,12 @@ export default function Home() {
                 <p className="eyebrow">Заказ {latestOrder.orderNumber}</p>
                 <h2 id="status-title">{orderStatusLabels[latestOrder.status]}</h2>
                 <div className="order-status-card"><span>Оплата</span><b>{paymentStatusLabels[latestOrder.paymentStatus]}</b><span>Сумма</span><b>{money(latestOrder.total)}</b>{latestOrder.updatedAt && <><span>Обновлено</span><b>{new Date(latestOrder.updatedAt).toLocaleString("ru-RU")}</b></>}</div>
+                {isHttpsUrl(latestOrder.paymentUrl) && latestOrder.paymentStatus !== "paid" && latestOrder.paymentStatus !== "refunded" && (
+                  <p className="payment-qr-hint">На компьютере ЮKassa покажет QR-код СБП, на телефоне — список банков.</p>
+                )}
                 <div className="dialog-actions">
                   {isHttpsUrl(latestOrder.paymentUrl) && latestOrder.paymentStatus !== "paid" && latestOrder.paymentStatus !== "refunded" && (
-                    <a className="button button--navy" href={latestOrder.paymentUrl} referrerPolicy="no-referrer">Оплатить через СБП</a>
+                    <a className="button button--navy" href={latestOrder.paymentUrl} referrerPolicy="no-referrer">Открыть QR ЮKassa</a>
                   )}
                   <button className="button button--navy" type="button" onClick={() => void checkOrderStatus()} disabled={orderStatusLoading || !latestOrder.customerPhone}>{orderStatusLoading ? "Обновляем…" : latestOrder.customerPhone ? "Обновить статус" : "Статус сохранён"}</button>
                 </div>

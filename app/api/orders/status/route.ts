@@ -7,9 +7,14 @@ import {
   readJsonBody,
   securityErrorResponse,
 } from "../../../../lib/http-security";
-import { getOrderStatus } from "../../../../lib/store";
+import {
+  getOrderForCustomerStatus,
+  publicOrderStatus,
+} from "../../../../lib/store";
+import { reconcileYooKassaOrderPayment } from "../../../../lib/yookassa-reconcile";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const orderNumberPattern = /^RAD-\d{6}-(?:\d{4}|[0-9A-F]{12})$/;
 
@@ -56,15 +61,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const order = await getOrderStatus(orderNumber, customerPhone);
-    if (!order) {
+    const storedOrder = await getOrderForCustomerStatus(orderNumber, customerPhone);
+    if (!storedOrder) {
       return noStoreJson(
         { error: "Заказ не найден. Проверьте номер заказа и телефон." },
         { status: 404 },
       );
     }
 
-    return noStoreJson({ order });
+    let order = storedOrder;
+    try {
+      order = await reconcileYooKassaOrderPayment(storedOrder);
+    } catch (error) {
+      console.error("Failed to reconcile YooKassa payment on order status check", {
+        orderId: storedOrder.id,
+        paymentId: storedOrder.yookassaPaymentId,
+        error,
+      });
+      // A temporary provider error must not hide the last trusted DB status.
+      order = (await getOrderForCustomerStatus(orderNumber, customerPhone)) ?? storedOrder;
+    }
+
+    return noStoreJson({ order: publicOrderStatus(order) });
   } catch (error) {
     return securityErrorResponse(error);
   }

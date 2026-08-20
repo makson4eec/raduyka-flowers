@@ -623,6 +623,13 @@
   opacity: 0.58;
 }
 
+.admin-order__payment-actions a.admin-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .admin-order select,
 .admin-order input,
 .admin-product-form input,
@@ -990,6 +997,7 @@
 
   .admin-order__controls .admin-primary,
   .admin-order__controls .admin-restore,
+  .admin-order__payment-actions .admin-primary,
   .admin-order__payment-actions .admin-secondary {
     flex: 1 1 100%;
   }

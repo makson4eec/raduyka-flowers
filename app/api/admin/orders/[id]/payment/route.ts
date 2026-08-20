@@ -57,7 +57,7 @@ export async function POST(request: Request, context: Context) {
     }
 
     const prepared = await prepareYooKassaPayment(id);
-    if (prepared.existingPayment) {
+    if (prepared.existingPayment && !prepared.reconcilePaymentId) {
       return noStoreJson({ order: prepared.order });
     }
 
@@ -109,7 +109,8 @@ export async function POST(request: Request, context: Context) {
         return noStoreJson({ order: paidOrder });
       }
 
-      const confirmationUrl = canonicalPayment.confirmation?.confirmationUrl;
+      const confirmationUrl = canonicalPayment.confirmation?.confirmationUrl
+        ?? prepared.order.yookassaPaymentUrl;
       if (!confirmationUrl) {
         throw new YooKassaApiError(
           "ЮKassa не вернула ссылку активного платежа. Требуется ручная проверка.",

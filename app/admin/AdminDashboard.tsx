@@ -195,8 +195,15 @@ function OrderEditor({
     && order.status !== "cancelled"
     && order.paymentStatus !== "paid"
     && order.paymentStatus !== "refunded"
-    && (order.paymentStatus === "pending" || paymentAttemptExists);
+    && (
+      order.paymentStatus === "pending"
+      || order.paymentStatus === "invoice_sent"
+      || paymentAttemptExists
+    );
   const storedPaymentLinkExists = Boolean(paymentUrl && order.status !== "cancelled");
+  const manualPaymentOptions = Object.entries(paymentLabels).filter(
+    ([value]) => value !== "invoice_sent" || order.paymentStatus === "invoice_sent",
+  );
 
   const save = async (nextStatus: OrderStatus = status) => {
     setSaving(true);
@@ -365,7 +372,7 @@ function OrderEditor({
             disabled={archived || saving || creatingPayment || paymentAttemptExists}
             onChange={(event) => setPaymentStatus(event.target.value as PaymentStatus)}
           >
-            {Object.entries(paymentLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {manualPaymentOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
         <label>
@@ -430,6 +437,14 @@ function OrderEditor({
           >
             Скопировать ссылку на оплату
           </button>
+          <a
+            className="admin-secondary"
+            href={paymentUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Открыть QR ЮKassa
+          </a>
         </div>
       ) : paymentCanBeCreated ? (
         <div className="admin-order__payment-actions">
@@ -438,10 +453,10 @@ function OrderEditor({
               ? "Сначала укажите стоимость доставки и сохраните заказ."
               : !paymentFieldsAreSaved && !paymentAttemptExists
                 ? "Сначала сохраните изменения заказа."
-                : "Сумма оплаты будет рассчитана сервером из заказа и доставки."}
+                : "Сумма будет рассчитана сервером. Покупатель увидит переход к официальному QR ЮKassa."}
           </span>
           <button
-            className="admin-secondary"
+            className="admin-primary"
             type="button"
             onClick={() => void createPayment()}
             disabled={
@@ -454,8 +469,8 @@ function OrderEditor({
             {creatingPayment
               ? "Создаём оплату…"
               : paymentAttemptExists
-                ? "Повторить создание оплаты"
-                : "Создать оплату"}
+                ? "Проверить или повторить оплату"
+                : "Выставить оплату СБП"}
           </button>
         </div>
       ) : null}
