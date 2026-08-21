@@ -30,8 +30,7 @@ type OrderLiveStatus = "connecting" | "live" | "error";
 type NewOrderNotice = { count: number; orderNumber: string };
 
 const ORDER_REFRESH_INTERVAL_MS = 10_000;
-const ADMIN_REQUEST_TIMEOUT_MS = 8_000;
-const ADMIN_PAYMENT_TIMEOUT_MS = 35_000;
+const ADMIN_REQUEST_TIMEOUT_MS = 30_000;
 
 const isArchivedOrder = (order: Order) =>
   order.status === "completed" || order.status === "cancelled";
@@ -187,7 +186,7 @@ async function fetchAdminPages<T extends { id: string | number }>(
       if (signal?.aborted) throw cause;
       if (requestSignal.aborted) {
         throw new Error(
-          "Сервер отвечает слишком долго. Проверьте Supabase/Vercel и повторите загрузку.",
+          "Сервер отвечает слишком долго. Повторите загрузку через несколько секунд.",
         );
       }
       throw cause;
@@ -319,7 +318,6 @@ function OrderEditor({
     try {
       const response = await fetch(`/api/admin/orders/${order.id}/payment`, {
         method: "POST",
-        signal: AbortSignal.timeout(ADMIN_PAYMENT_TIMEOUT_MS),
       });
       const payload = await readJson<{ order: Order }>(response);
       setStatus(payload.order.status);
