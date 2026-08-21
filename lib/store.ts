@@ -422,7 +422,15 @@ async function syncAndPersistOrderBonuses(
   );
 }
 
-export async function listProducts(includeHidden = false): Promise<Product[]> {
+type ListPage = {
+  offset: number;
+  limit: number;
+};
+
+export async function listProducts(
+  includeHidden = false,
+  page?: ListPage,
+): Promise<Product[]> {
   let query = db()
     .from("products")
     .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants")
@@ -430,6 +438,9 @@ export async function listProducts(includeHidden = false): Promise<Product[]> {
     .order("id", { ascending: true });
 
   if (!includeHidden) query = query.eq("visible", true);
+  if (page) {
+    query = query.range(page.offset, page.offset + page.limit - 1);
+  }
 
   const { data, error } = await query;
   if (error) throw error;
@@ -493,11 +504,17 @@ export async function deleteProduct(id: number): Promise<void> {
   if (error) throw error;
 }
 
-export async function listOrders(): Promise<Order[]> {
-  const { data, error } = await db()
+export async function listOrders(page?: ListPage): Promise<Order[]> {
+  let query = db()
     .from("orders")
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (page) {
+    query = query.range(page.offset, page.offset + page.limit - 1);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return ((data ?? []) as OrderRow[]).map((row) => cloneOrder(orderFromRow(row)));
 }

@@ -160,6 +160,45 @@ async function readJson<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
+async function fetchAdminPages<T extends { id: string | number }>(
+  path: string,
+  key: "products" | "orders",
+  signal?: AbortSignal,
+  onUnauthorized?: () => void,
+) {
+  const items: T[] = [];
+  const seenIds = new Set<string | number>();
+
+  for (let page = 0; page < 10_000; page += 1) {
+    const response = await fetch(`${path}?page=${page}`, {
+      cache: "no-store",
+      signal,
+    });
+    if (response.status === 401) onUnauthorized?.();
+    const payload = await readJson<{
+      products?: T[];
+      orders?: T[];
+      nextPage: number | null;
+    }>(response);
+    const pageItems = payload[key];
+    if (!Array.isArray(pageItems)) {
+      throw new Error("Сервер вернул некорректный список данных.");
+    }
+    for (const item of pageItems) {
+      if (seenIds.has(item.id)) continue;
+      seenIds.add(item.id);
+      items.push(item);
+    }
+
+    if (payload.nextPage === null) return items;
+    if (payload.nextPage !== page + 1) {
+      throw new Error("Сервер вернул некорректную страницу данных.");
+    }
+  }
+
+  throw new Error("Превышен допустимый объём данных.");
+}
+
 function OrderEditor({
   order,
   onSaved,
@@ -577,19 +616,19 @@ export default function AdminDashboard({
     ordersRefreshAbortRef.current = controller;
 
     try {
-      const response = await fetch("/api/admin/orders", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (response.status === 401) sessionExpiredRef.current = true;
-      const payload = await readJson<{ orders: Order[] }>(response);
+      const incomingOrders = await fetchAdminPages<Order>(
+        "/api/admin/orders",
+        "orders",
+        controller.signal,
+        () => { sessionExpiredRef.current = true; },
+      );
       if (controller.signal.aborted) return;
 
       const knownIds = new Set(ordersRef.current.map((order) => order.id));
-      const newOrders = payload.orders.filter(
+      const newOrders = incomingOrders.filter(
         (order) => !knownIds.has(order.id) && order.status === "new",
       );
-      const nextOrders = mergeOrderSnapshots(ordersRef.current, payload.orders);
+      const nextOrders = mergeOrderSnapshots(ordersRef.current, incomingOrders);
       ordersRef.current = nextOrders;
       setOrders(nextOrders);
       setOrderLiveStatus("live");
@@ -616,14 +655,12 @@ export default function AdminDashboard({
     setLoading(true);
     setLoadError("");
     try {
-      const [productResponse, orderResponse] = await Promise.all([
-        fetch("/api/admin/products", { cache: "no-store" }),
-        fetch("/api/admin/orders", { cache: "no-store" }),
+      const [nextProducts, incomingOrders] = await Promise.all([
+        fetchAdminPages<Product>("/api/admin/products", "products"),
+        fetchAdminPages<Order>("/api/admin/orders", "orders"),
       ]);
-      const productPayload = await readJson<{ products: Product[] }>(productResponse);
-      const orderPayload = await readJson<{ orders: Order[] }>(orderResponse);
-      setProducts(productPayload.products);
-      const nextOrders = mergeOrderSnapshots(ordersRef.current, orderPayload.orders);
+      setProducts(nextProducts);
+      const nextOrders = mergeOrderSnapshots(ordersRef.current, incomingOrders);
       ordersRef.current = nextOrders;
       ordersInitializedRef.current = true;
       setOrders(nextOrders);
@@ -638,18 +675,13 @@ export default function AdminDashboard({
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetch("/api/admin/products", { cache: "no-store" }),
-      fetch("/api/admin/orders", { cache: "no-store" }),
+      fetchAdminPages<Product>("/api/admin/products", "products"),
+      fetchAdminPages<Order>("/api/admin/orders", "orders"),
     ])
-      .then(async ([productResponse, orderResponse]) => {
-        const productPayload = await readJson<{ products: Product[] }>(productResponse);
-        const orderPayload = await readJson<{ orders: Order[] }>(orderResponse);
-        return { productPayload, orderPayload };
-      })
-      .then(({ productPayload, orderPayload }) => {
+      .then(([nextProducts, incomingOrders]) => {
         if (!active) return;
-        setProducts(productPayload.products);
-        const nextOrders = mergeOrderSnapshots(ordersRef.current, orderPayload.orders);
+        setProducts(nextProducts);
+        const nextOrders = mergeOrderSnapshots(ordersRef.current, incomingOrders);
         ordersRef.current = nextOrders;
         ordersInitializedRef.current = true;
         setOrders(nextOrders);

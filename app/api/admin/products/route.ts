@@ -17,10 +17,35 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+const ADMIN_PAGE_SIZE = 10;
+
+function pageFromRequest(request: Request) {
+  const rawPage = new URL(request.url).searchParams.get("page");
+  if (rawPage === null) return null;
+  if (!/^(?:0|[1-9]\d{0,3})$/.test(rawPage)) return undefined;
+  return Number(rawPage);
+}
+
+export async function GET(request: Request) {
   if (!(await getAuthorizedAdmin())) return unauthorizedResponse();
   try {
-    return noStoreJson({ products: await listProducts(true) });
+    const page = pageFromRequest(request);
+    if (page === undefined) {
+      return noStoreJson({ error: "Некорректная страница каталога." }, { status: 400 });
+    }
+    if (page === null) {
+      return noStoreJson({ products: await listProducts(true) });
+    }
+
+    const products = await listProducts(true, {
+      offset: page * ADMIN_PAGE_SIZE,
+      limit: ADMIN_PAGE_SIZE + 1,
+    });
+    const hasNextPage = products.length > ADMIN_PAGE_SIZE;
+    return noStoreJson({
+      products: products.slice(0, ADMIN_PAGE_SIZE),
+      nextPage: hasNextPage ? page + 1 : null,
+    });
   } catch (error) {
     return securityErrorResponse(error);
   }
