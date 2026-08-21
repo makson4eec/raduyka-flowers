@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { getAuthorizedAdmin, unauthorizedResponse } from "../../../../../lib/admin-auth";
 import {
   assertSameOriginMutation,
@@ -34,6 +35,12 @@ const payments: PaymentStatus[] = [
   "refunded",
 ];
 const MAX_DELIVERY_FEE = 1_000_000;
+const customerEmailSchema = z
+  .string()
+  .trim()
+  .max(254)
+  .email()
+  .transform((value) => value.toLowerCase());
 
 function isIsoTimestamp(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 40) return false;
@@ -55,6 +62,7 @@ export async function PATCH(request: Request, context: Context) {
       paymentStatus?: unknown;
       deliveryFee?: unknown;
       adminNote?: unknown;
+      customerEmail?: unknown;
       expectedUpdatedAt?: unknown;
     };
     if (
@@ -85,6 +93,18 @@ export async function PATCH(request: Request, context: Context) {
       );
     }
 
+    let customerEmail: string | undefined;
+    if (payload.customerEmail !== undefined) {
+      const parsedEmail = customerEmailSchema.safeParse(payload.customerEmail);
+      if (!parsedEmail.success) {
+        return noStoreJson(
+          { error: "Укажите корректный email покупателя." },
+          { status: 400 },
+        );
+      }
+      customerEmail = parsedEmail.data;
+    }
+
     const order = await updateOrderAndSyncBonuses(id, {
       status: payload.status as OrderStatus,
       paymentStatus: payload.paymentStatus as PaymentStatus,
@@ -93,6 +113,7 @@ export async function PATCH(request: Request, context: Context) {
         typeof payload.adminNote === "string"
           ? payload.adminNote.trim().slice(0, 1_000)
           : "",
+      customerEmail,
       expectedUpdatedAt: payload.expectedUpdatedAt,
     });
 

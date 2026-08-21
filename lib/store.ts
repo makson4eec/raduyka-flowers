@@ -50,6 +50,7 @@ type OrderUpdatePatch = {
   paymentStatus: PaymentStatus;
   deliveryFee: number | null;
   adminNote: string;
+  customerEmail?: string;
   expectedUpdatedAt?: string;
 };
 
@@ -105,6 +106,7 @@ type OrderRow = {
   recipient_phone: string;
   customer_name: string;
   customer_phone: string;
+  customer_email: string | null;
   customer_user_id: string | null;
   bonus_spent: number;
   bonus_earned: number;
@@ -260,6 +262,7 @@ function orderFromRow(row: OrderRow): StoredOrder {
     recipientPhone: row.recipient_phone,
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
+    customerEmail: row.customer_email ?? null,
     customerUserId: row.customer_user_id,
     bonusSpent: Number(row.bonus_spent),
     bonusEarned: Number(row.bonus_earned),
@@ -312,6 +315,7 @@ function orderToRow(order: StoredOrder) {
     recipient_phone: order.recipientPhone,
     customer_name: order.customerName,
     customer_phone: order.customerPhone,
+    customer_email: order.customerEmail ?? null,
     customer_user_id: order.customerUserId ?? null,
     bonus_spent: order.bonusSpent ?? 0,
     bonus_earned: order.bonusEarned ?? 0,
@@ -1175,6 +1179,7 @@ export async function createOrder(
       recipientPhone: input.recipientPhone,
       customerName: input.customerName,
       customerPhone: input.customerPhone,
+      customerEmail: input.customerEmail ?? null,
       customerUserId: options.customerUserId ?? null,
       bonusSpent,
       bonusEarned: 0,
@@ -1294,6 +1299,16 @@ export async function updateOrderAndSyncBonuses(
       "Стоимость доставки зафиксирована для оплаты ЮKassa и не может быть изменена.",
     );
   }
+  if (
+    hasYooKassaAttempt
+    && patch.customerEmail !== undefined
+    && patch.customerEmail.trim().toLowerCase()
+      !== (current.customerEmail?.trim().toLowerCase() ?? "")
+  ) {
+    throw new StoreConflictError(
+      "Email покупателя зафиксирован для оплаты ЮKassa и не может быть изменён.",
+    );
+  }
   if (hasYooKassaAttempt && patch.paymentStatus !== current.paymentStatus) {
     throw new StoreConflictError(
       "Статус оплаты ЮKassa обновляется автоматически после проверки платежа.",
@@ -1319,6 +1334,7 @@ export async function updateOrderAndSyncBonuses(
       + (deliveryFee ?? 0)
       + (current.cardFee ?? 0),
     adminNote: patch.adminNote,
+    customerEmail: patch.customerEmail ?? current.customerEmail,
     updatedAt: new Date().toISOString(),
   };
 

@@ -145,6 +145,7 @@ const PRODUCTION_ASSET_ORIGIN = "https://raduyka-flowers.vercel.app";
 const LATEST_ORDER_STORAGE_KEY = "raduyka-latest-order-v2";
 const LATEST_ORDER_TTL_MS = 24 * 60 * 60_000;
 const ORDER_NUMBER_PATTERN = /^RAD-\d{6}-(?:\d{4}|[0-9A-F]{12})$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const orderStatusLabels: Record<OrderStatus, string> = {
   new: "Заказ принят",
@@ -290,6 +291,7 @@ export default function Home() {
   const [bonusAccount, setBonusAccount] = useState<BonusAccount>({ authenticated: false, available: false, balance: null, loading: true });
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
   const [latestOrder, setLatestOrder] = useState<LatestOrder | null>(null);
   const checkoutAttemptIdRef = useRef<string | null>(null);
@@ -732,6 +734,11 @@ export default function Home() {
       go("cart");
       return;
     }
+    const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(normalizedCustomerEmail)) {
+      setCheckoutError("Укажите корректный email для электронного чека.");
+      return;
+    }
     setCheckoutSubmitting(true);
     setCheckoutError("");
     const form = new FormData(event.currentTarget);
@@ -752,6 +759,7 @@ export default function Home() {
           recipientPhone: String(form.get("recipientPhone") ?? ""),
           customerName: String(form.get("customerName") ?? ""),
           customerPhone,
+          customerEmail: normalizedCustomerEmail,
           address: String(form.get("address") ?? ""),
           deliveryDate: String(form.get("deliveryDate") ?? ""),
           deliveryTime: String(form.get("deliveryTime") ?? ""),
@@ -809,6 +817,7 @@ export default function Home() {
       setCardAdded(false);
       setBonus(false);
       setRecipientType("self");
+      setCustomerEmail("");
       setSelectedProductAddOns([]);
       checkoutAttemptIdRef.current = null;
       go("success");
@@ -1377,6 +1386,7 @@ export default function Home() {
                   <div className="form-grid">
                     <label>Ваше имя<input name="customerName" required placeholder="Имя" /></label>
                     <label>Ваш телефон<input name="customerPhone" required inputMode="tel" placeholder="+7 999 000-00-00" /></label>
+                    <label className="span-2">Email для электронного чека<input type="email" name="customerEmail" required autoComplete="email" inputMode="email" maxLength={254} value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="name@example.ru" /></label>
                     {cardAdded ? (
                       <><label className="span-2">Текст для открытки<textarea name="cardText" required maxLength={500} placeholder="Напишите несколько тёплых слов" /><small className="legal-helper">Не указывайте сведения о здоровье, религии, политических взглядах и другие чувствительные данные.</small></label><button className="checkout-remove-card" type="button" onClick={() => setCardAdded(false)}>Убрать открытку</button></>
                     ) : (

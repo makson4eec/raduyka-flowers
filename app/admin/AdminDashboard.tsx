@@ -174,6 +174,7 @@ function OrderEditor({
   const [deliveryFee, setDeliveryFee] = useState(
     order.deliveryFee === null ? "" : String(order.deliveryFee),
   );
+  const [customerEmail, setCustomerEmail] = useState(order.customerEmail ?? "");
   const [adminNote, setAdminNote] = useState(order.adminNote);
   const [saving, setSaving] = useState(false);
   const [creatingPayment, setCreatingPayment] = useState(false);
@@ -187,9 +188,16 @@ function OrderEditor({
   );
   const hasSavedDelivery = order.deliveryMethod === "pickup" || order.deliveryFee !== null;
   const deliveryValue = deliveryFee === "" ? null : Number(deliveryFee);
+  const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
+  const savedCustomerEmail = order.customerEmail?.trim().toLowerCase() ?? "";
+  const customerEmailIsValid = normalizedCustomerEmail.length <= 254
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedCustomerEmail);
+  const hasSavedCustomerEmail = customerEmailIsValid
+    && normalizedCustomerEmail === savedCustomerEmail;
   const paymentFieldsAreSaved = status === order.status
     && paymentStatus === order.paymentStatus
     && (order.deliveryMethod === "pickup" || deliveryValue === order.deliveryFee)
+    && normalizedCustomerEmail === savedCustomerEmail
     && adminNote === order.adminNote;
   const paymentCanBeCreated = !archived
     && order.status !== "cancelled"
@@ -207,9 +215,15 @@ function OrderEditor({
   const canCreatePaymentFromSelect = paymentCanBeCreated
     && !paymentAttemptExists
     && hasSavedDelivery
+    && hasSavedCustomerEmail
     && paymentFieldsAreSaved;
 
   const save = async (nextStatus: OrderStatus = status) => {
+    if (normalizedCustomerEmail && !customerEmailIsValid) {
+      setError("Укажите корректный email покупателя.");
+      return;
+    }
+
     setSaving(true);
     setError("");
     setWarning("");
@@ -221,6 +235,7 @@ function OrderEditor({
           status: nextStatus,
           paymentStatus,
           deliveryFee: deliveryFee === "" ? null : Number(deliveryFee),
+          ...(normalizedCustomerEmail ? { customerEmail: normalizedCustomerEmail } : {}),
           adminNote,
           expectedUpdatedAt: order.updatedAt,
         }),
@@ -236,6 +251,11 @@ function OrderEditor({
   };
 
   const createPayment = async () => {
+    if (!hasSavedCustomerEmail || !paymentFieldsAreSaved) {
+      setError("Для оплаты укажите реальный email покупателя и сохраните заказ.");
+      return;
+    }
+
     setCreatingPayment(true);
     setError("");
     setWarning("");
@@ -249,6 +269,7 @@ function OrderEditor({
       setDeliveryFee(
         payload.order.deliveryFee === null ? "" : String(payload.order.deliveryFee),
       );
+      setCustomerEmail(payload.order.customerEmail ?? "");
       onSaved(payload.order);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось создать оплату.");
@@ -354,6 +375,25 @@ function OrderEditor({
         <section>
           <h4>Заказчик</h4>
           <p><b>{order.customerName}</b><br /><a href={"tel:" + order.customerPhone}>{order.customerPhone}</a></p>
+          <label className="admin-order__customer-email">
+            <span>Email покупателя для чека</span>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              maxLength={254}
+              value={customerEmail}
+              readOnly={archived || paymentAttemptExists}
+              aria-invalid={Boolean(normalizedCustomerEmail) && !customerEmailIsValid}
+              placeholder="buyer@example.ru"
+              onChange={(event) => setCustomerEmail(event.target.value)}
+            />
+            <small>
+              {hasSavedCustomerEmail
+                ? "Сохранён — будет указан в электронном чеке."
+                : "Перед выставлением оплаты укажите реальный email покупателя и сохраните заказ."}
+            </small>
+          </label>
           {order.cardText && <p className="card-message">Открытка: «{order.cardText}»</p>}
         </section>
       </div>
@@ -466,6 +506,10 @@ function OrderEditor({
           <span>
             {!hasSavedDelivery
               ? "Сначала укажите стоимость доставки и сохраните заказ."
+              : !customerEmailIsValid
+                ? "Укажите реальный email покупателя для электронного чека."
+                : !hasSavedCustomerEmail
+                  ? "Сохраните email покупателя перед выставлением оплаты."
               : !paymentFieldsAreSaved && !paymentAttemptExists
                 ? "Сначала сохраните изменения заказа."
                 : "Сумма будет рассчитана сервером. Покупатель увидит переход к официальному QR ЮKassa."}
@@ -478,6 +522,7 @@ function OrderEditor({
               saving
               || creatingPayment
               || !hasSavedDelivery
+              || !hasSavedCustomerEmail
               || !paymentFieldsAreSaved
             }
           >

@@ -49,6 +49,13 @@ const phone = z
     return digits.length >= 10 && digits.length <= 15;
   });
 
+const email = z
+  .string()
+  .trim()
+  .max(254)
+  .email()
+  .transform((value) => value.toLowerCase());
+
 const builderSchema = z.object({
   budget: z.number().int().min(1).max(100_000),
   mood: singleLine(50),
@@ -63,6 +70,7 @@ const orderSchema = z.object({
   recipientPhone: z.string().trim().max(40),
   customerName: singleLine(100).min(1),
   customerPhone: phone,
+  customerEmail: email.optional(),
   address: singleLine(300),
   deliveryDate: z.string().trim().max(20),
   deliveryTime: z.string().trim().max(40),

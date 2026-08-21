@@ -113,6 +113,7 @@ export type Order = {
   recipientPhone: string;
   customerName: string;
   customerPhone: string;
+  customerEmail?: string | null;
   /** Trusted server-side Supabase identity. Never accept this value from JSON. */
   customerUserId?: string | null;
   bonusSpent?: number;
@@ -137,6 +138,7 @@ export type CreateOrderInput = {
   recipientPhone: string;
   customerName: string;
   customerPhone: string;
+  customerEmail?: string | null;
   address: string;
   deliveryDate: string;
   deliveryTime: string;

@@ -585,6 +585,25 @@
   background: #f5ecf0;
 }
 
+.admin-order__customer-email {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  color: #656a77;
+  font-size: 0.73rem;
+  font-weight: 750;
+}
+
+.admin-order__customer-email small {
+  color: #777b85;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.admin-order__customer-email input[aria-invalid="true"] {
+  border-color: #a51547;
+}
+
 .admin-order__controls {
   align-items: flex-end;
 }

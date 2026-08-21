@@ -9,6 +9,13 @@ import {
   yooKassaAdminErrorMessage,
   type YooKassaPayment,
 } from "./yookassa-contract";
+import {
+  buildYooKassaReceipt,
+  parseYooKassaVatCode,
+  type YooKassaReceipt,
+  type YooKassaVatCode,
+} from "./yookassa-receipt";
+import type { Order } from "./types";
 
 const YOOKASSA_API_URL = "https://api.yookassa.ru/v3";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -41,9 +48,84 @@ export type CreateYooKassaSbpPaymentInput = {
   amountRubles: number;
   orderId: string;
   orderNumber: string;
+  order: Order;
   returnUrl: string;
   idempotenceKey: string;
 };
+
+type YooKassaReceiptConfiguration = {
+  vatCode: YooKassaVatCode;
+  taxSystemCode?: number;
+};
+
+type YooKassaReceiptPayload = YooKassaReceipt & {
+  tax_system_code?: number;
+};
+
+function requireReceiptConfiguration(): YooKassaReceiptConfiguration {
+  let vatCode: YooKassaVatCode;
+  try {
+    vatCode = parseYooKassaVatCode(
+      process.env.YOOKASSA_RECEIPT_VAT_CODE?.trim(),
+    );
+  } catch {
+    throw new YooKassaApiError(
+      "ЮKassa требует чек: задайте серверную переменную YOOKASSA_RECEIPT_VAT_CODE от 1 до 12 согласно вашей ставке НДС.",
+      { status: 503 },
+    );
+  }
+
+  const rawTaxSystemCode =
+    process.env.YOOKASSA_RECEIPT_TAX_SYSTEM_CODE?.trim() ?? "";
+  if (!rawTaxSystemCode) return { vatCode };
+
+  if (!/^[1-6]$/.test(rawTaxSystemCode)) {
+    throw new YooKassaApiError(
+      "Некорректная серверная настройка YOOKASSA_RECEIPT_TAX_SYSTEM_CODE: допустимы значения от 1 до 6.",
+      { status: 503 },
+    );
+  }
+
+  return { vatCode, taxSystemCode: Number(rawTaxSystemCode) };
+}
+
+function receiptForPayment(
+  order: Order,
+  expectedAmountRubles: number,
+): YooKassaReceiptPayload {
+  const { vatCode, taxSystemCode } = requireReceiptConfiguration();
+  let receipt: YooKassaReceipt;
+
+  try {
+    receipt = buildYooKassaReceipt(order, { vatCode });
+  } catch {
+    throw new YooKassaApiError(
+      "Не удалось сформировать чек из сохранённых данных заказа. Укажите и сохраните настоящий email покупателя, затем проверьте позиции, скидку и итоговую сумму.",
+      { status: 400 },
+    );
+  }
+
+  const receiptAmountMinorUnits = receipt.items.reduce((sum, item) => {
+    const amount = amountToMinorUnits(item.amount.value);
+    const lineAmount = amount === null ? null : amount * item.quantity;
+    if (lineAmount === null || !Number.isSafeInteger(sum + lineAmount)) {
+      throw new YooKassaApiError("Сумма позиций чека некорректна.", {
+        status: 500,
+      });
+    }
+    return sum + lineAmount;
+  }, 0);
+  if (receiptAmountMinorUnits !== expectedAmountRubles * 100) {
+    throw new YooKassaApiError(
+      "Сумма позиций чека не совпадает с суммой платежа.",
+      { status: 500 },
+    );
+  }
+
+  return taxSystemCode === undefined
+    ? receipt
+    : { ...receipt, tax_system_code: taxSystemCode };
+}
 
 function requireCredentials(): YooKassaCredentials {
   const shopId = process.env.YOOKASSA_SHOP_ID?.trim();
@@ -204,8 +286,19 @@ export async function createYooKassaSbpPayment(
   } catch {
     throw new YooKassaApiError("Некорректная сумма платежа.", { status: 500 });
   }
+  if (
+    input.order.id !== input.orderId
+    || input.order.orderNumber !== orderNumber
+    || input.order.total !== input.amountRubles
+  ) {
+    throw new YooKassaApiError(
+      "Данные заказа для платежа не совпадают с сохранённым заказом.",
+      { status: 500 },
+    );
+  }
   const returnUrl = assertReturnUrl(input.returnUrl);
   const description = [...`Оплата заказа ${orderNumber}`].slice(0, 128).join("");
+  const receipt = receiptForPayment(input.order, input.amountRubles);
 
   const payment = await requestPayment("/payments", {
     method: "POST",
@@ -227,6 +320,7 @@ export async function createYooKassaSbpPayment(
         return_url: returnUrl,
       },
       description,
+      receipt,
       metadata: {
         order_id: input.orderId,
         order_number: orderNumber,

@@ -134,6 +134,7 @@ export async function POST(request: Request, context: Context) {
         amountRubles: prepared.amountRubles,
         orderId: prepared.order.id,
         orderNumber: prepared.order.orderNumber,
+        order: prepared.order,
         returnUrl: getYooKassaReturnUrl(prepared.order.orderNumber),
         idempotenceKey: prepared.idempotenceKey,
       });
@@ -141,6 +142,7 @@ export async function POST(request: Request, context: Context) {
       const isDefinitiveFailure = error instanceof YooKassaApiError
         && (
           error.status === 503
+          || (error.upstreamStatus === null && error.status === 400)
           || error.upstreamStatus !== null
             && error.upstreamStatus >= 400
             && error.upstreamStatus < 500

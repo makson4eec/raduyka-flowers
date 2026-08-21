@@ -91,6 +91,7 @@ create table if not exists public.orders (
   recipient_phone text not null,
   customer_name text not null,
   customer_phone text not null,
+  customer_email text,
   customer_user_id uuid references auth.users(id) on delete set null,
   bonus_spent integer not null default 0,
   bonus_earned integer not null default 0,
@@ -117,7 +118,8 @@ alter table public.orders
   add column if not exists yookassa_payment_url text,
   add column if not exists yookassa_idempotence_key uuid,
   add column if not exists yookassa_payment_amount integer,
-  add column if not exists yookassa_attempt_created_at timestamptz;
+  add column if not exists yookassa_attempt_created_at timestamptz,
+  add column if not exists customer_email text;
 
 alter table public.orders
   drop constraint if exists orders_yookassa_payment_pair_check,
@@ -160,3 +162,6 @@ alter table public.orders enable row level security;
 grant all on table public.products to service_role;
 grant all on table public.orders to service_role;
 grant usage, select on sequence public.products_id_seq to service_role;
+
+comment on column public.orders.customer_email is
+  'Normalized customer email used for order communication and fiscal receipts; nullable for legacy orders.';
