@@ -4,7 +4,7 @@ import { listOrders } from "../../../../lib/store";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_PAGE_SIZE = 10;
+const ADMIN_PAGE_SIZE = 50;
 
 function pageFromRequest(request: Request) {
   const rawPage = new URL(request.url).searchParams.get("page");

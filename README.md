@@ -35,6 +35,8 @@ npm.cmd run build
 
 1. `supabase/schema.sql` — профили, напоминания, push-подписки и журнал уведомлений.
 2. `supabase/store.sql` — товары и заказы.
+3. `supabase/migrations/2026-08-17-legal-readiness.sql` — юридические поля заказа и товаров.
+4. `supabase/migrations/2026-08-20-yookassa-sbp.sql` — служебные поля платежей ЮKassa/СБП.
 
 В Supabase Storage создайте публичный bucket:
 
@@ -65,10 +67,29 @@ npm.cmd run migrate:supabase
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
 - `CRON_SECRET`
+- `YOOKASSA_SHOP_ID`
+- `YOOKASSA_SECRET_KEY`
+- `YOOKASSA_RECEIPT_VAT_CODE`
 
 Публичные Firebase/Supabase переменные уже имеют префикс `NEXT_PUBLIC_`.
 
 После подключения постоянного домена задайте `SITE_URL=https://ваш-домен` и добавьте этот адрес в Supabase Auth URL Configuration. Для первой Vercel-публикации приложение умеет использовать системный production URL Vercel как безопасный запасной вариант.
+
+## ЮKassa / СБП
+
+Оплата создаётся только на сервере после того, как сотрудник сохранил окончательную стоимость доставки. Сумма берётся из сохранённого заказа, а не из браузера. Для платежа используется СБП (`payment_method_data.type = "sbp"`), автоматическое подтверждение (`capture = true`) и redirect-confirmation.
+
+Перед проверкой оплаты:
+
+1. Примените `supabase/migrations/2026-08-20-yookassa-sbp.sql`.
+2. Заполните `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` и `YOOKASSA_RECEIPT_VAT_CODE`. `YOOKASSA_RECEIPT_TAX_SYSTEM_CODE` указывайте только в соответствии с вашей системой налогообложения и настройкой чеков.
+3. В личном кабинете ЮKassa откройте **Интеграция → HTTP-уведомления**, укажите `https://ваш-домен/api/yookassa/webhook` и включите события `payment.succeeded` и `payment.canceled`. URL должен быть публичным HTTPS-адресом.
+4. В Vercel добавьте те же server-only переменные окружения и выполните новый Deploy.
+5. Проверьте реальный сценарий: заказ → стоимость доставки → «Выставить оплату СБП» → открыть/скопировать ссылку → оплата → статус «Оплачено».
+
+Webhook не доверяет входящему событию вслепую: приложение повторно запрашивает платёж у ЮKassa и сверяет ID, заказ, сумму, валюту, способ оплаты и статус.
+
+Важно: тестовый магазин ЮKassa не поддерживает тестирование СБП так же, как банковские карты. Для проверки СБП нужен магазин, в котором этот способ оплаты действительно подключён.
 
 ## Vercel
 

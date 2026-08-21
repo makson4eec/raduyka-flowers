@@ -29,7 +29,9 @@ type OrderView = "active" | "archive";
 type OrderLiveStatus = "connecting" | "live" | "error";
 type NewOrderNotice = { count: number; orderNumber: string };
 
-const ORDER_REFRESH_INTERVAL_MS = 3000;
+const ORDER_REFRESH_INTERVAL_MS = 10_000;
+const ADMIN_REQUEST_TIMEOUT_MS = 8_000;
+const ADMIN_PAYMENT_TIMEOUT_MS = 35_000;
 
 const isArchivedOrder = (order: Order) =>
   order.status === "completed" || order.status === "cancelled";
@@ -170,10 +172,26 @@ async function fetchAdminPages<T extends { id: string | number }>(
   const seenIds = new Set<string | number>();
 
   for (let page = 0; page < 10_000; page += 1) {
-    const response = await fetch(`${path}?page=${page}`, {
-      cache: "no-store",
-      signal,
-    });
+    const timeoutSignal = AbortSignal.timeout(ADMIN_REQUEST_TIMEOUT_MS);
+    const requestSignal = signal
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+
+    let response: Response;
+    try {
+      response = await fetch(`${path}?page=${page}`, {
+        cache: "no-store",
+        signal: requestSignal,
+      });
+    } catch (cause) {
+      if (signal?.aborted) throw cause;
+      if (requestSignal.aborted) {
+        throw new Error(
+          "Сервер отвечает слишком долго. Проверьте Supabase/Vercel и повторите загрузку.",
+        );
+      }
+      throw cause;
+    }
     if (response.status === 401) onUnauthorized?.();
     const payload = await readJson<{
       products?: T[];
@@ -301,6 +319,7 @@ function OrderEditor({
     try {
       const response = await fetch(`/api/admin/orders/${order.id}/payment`, {
         method: "POST",
+        signal: AbortSignal.timeout(ADMIN_PAYMENT_TIMEOUT_MS),
       });
       const payload = await readJson<{ order: Order }>(response);
       setStatus(payload.order.status);
@@ -590,7 +609,8 @@ export default function AdminDashboard({
   const [orderView, setOrderView] = useState<OrderView>("active");
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [draft, setDraft] = useState<Product | null>(null);
   const [newProductPickerOpen, setNewProductPickerOpen] = useState(false);
@@ -651,36 +671,61 @@ export default function AdminDashboard({
     }
   }, []);
 
-  const load = async () => {
-    setLoading(true);
+  const load = () => {
     setLoadError("");
-    try {
-      const [nextProducts, incomingOrders] = await Promise.all([
-        fetchAdminPages<Product>("/api/admin/products", "products"),
-        fetchAdminPages<Order>("/api/admin/orders", "orders"),
-      ]);
-      setProducts(nextProducts);
-      const nextOrders = mergeOrderSnapshots(ordersRef.current, incomingOrders);
-      ordersRef.current = nextOrders;
-      ordersInitializedRef.current = true;
-      setOrders(nextOrders);
-      setOrderLiveStatus("live");
-    } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : "Не удалось загрузить данные.");
-    } finally {
-      setLoading(false);
-    }
+    setProductsLoading(true);
+    setOrdersLoading(true);
+    setOrderLiveStatus("connecting");
+
+    void fetchAdminPages<Product>("/api/admin/products", "products")
+      .then((nextProducts) => {
+        setProducts(nextProducts);
+      })
+      .catch((cause: unknown) => {
+        setLoadError((current) => current || (
+          cause instanceof Error ? cause.message : "Не удалось загрузить товары."
+        ));
+      })
+      .finally(() => setProductsLoading(false));
+
+    void fetchAdminPages<Order>("/api/admin/orders", "orders")
+      .then((incomingOrders) => {
+        const nextOrders = mergeOrderSnapshots(ordersRef.current, incomingOrders);
+        ordersRef.current = nextOrders;
+        ordersInitializedRef.current = true;
+        setOrders(nextOrders);
+        setOrderLiveStatus("live");
+      })
+      .catch((cause: unknown) => {
+        setLoadError((current) => current || (
+          cause instanceof Error ? cause.message : "Не удалось загрузить заказы."
+        ));
+        setOrderLiveStatus("error");
+      })
+      .finally(() => setOrdersLoading(false));
   };
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      fetchAdminPages<Product>("/api/admin/products", "products"),
-      fetchAdminPages<Order>("/api/admin/orders", "orders"),
-    ])
-      .then(([nextProducts, incomingOrders]) => {
+
+    void fetchAdminPages<Product>("/api/admin/products", "products")
+      .then((nextProducts) => {
+        if (active) setProducts(nextProducts);
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setLoadError((current) => current || (
+            cause instanceof Error ? cause.message : "Не удалось загрузить товары."
+          ));
+        }
+      })
+      .finally(() => {
+        if (active) setProductsLoading(false);
+      });
+
+    void fetchAdminPages<Order>("/api/admin/orders", "orders")
+      .then((incomingOrders) => {
         if (!active) return;
-        setProducts(nextProducts);
         const nextOrders = mergeOrderSnapshots(ordersRef.current, incomingOrders);
         ordersRef.current = nextOrders;
         ordersInitializedRef.current = true;
@@ -689,13 +734,16 @@ export default function AdminDashboard({
       })
       .catch((cause: unknown) => {
         if (active) {
-          setLoadError(cause instanceof Error ? cause.message : "Не удалось загрузить данные.");
+          setLoadError((current) => current || (
+            cause instanceof Error ? cause.message : "Не удалось загрузить заказы."
+          ));
           setOrderLiveStatus("error");
         }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setOrdersLoading(false);
       });
+
     return () => {
       active = false;
     };
@@ -719,6 +767,8 @@ export default function AdminDashboard({
       ordersRefreshAbortRef.current?.abort();
     };
   }, [refreshOrders]);
+
+  const loading = tab === "products" ? productsLoading : ordersLoading;
 
   const activeOrders = useMemo(
     () => orders.filter((order) => !isArchivedOrder(order)),

@@ -4,7 +4,6 @@ const isDevelopment = process.env.NODE_ENV !== "production";
 const isHttpsDeployment =
   process.env.VERCEL === "1"
   || process.env.DEPLOYMENT_HTTPS_ONLY === "true";
-const productionAssetOrigin = "https://raduyka-flowers.vercel.app";
 
 const firebaseConnectSources = [
   "https://firebaseinstallations.googleapis.com",
@@ -22,8 +21,8 @@ const supabaseOrigin = (() => {
   }
 })();
 
-const imageSources = ["'self'", "data:", "blob:", productionAssetOrigin, ...(supabaseOrigin ? [supabaseOrigin] : [])];
-const connectSources = ["'self'", productionAssetOrigin, ...firebaseConnectSources, ...(supabaseOrigin ? [supabaseOrigin] : [])];
+const imageSources = ["'self'", "data:", "blob:", ...(supabaseOrigin ? [supabaseOrigin] : [])];
+const connectSources = ["'self'", ...firebaseConnectSources, ...(supabaseOrigin ? [supabaseOrigin] : [])];
 const supabaseImagePattern = supabaseOrigin
   ? {
       protocol: new URL(supabaseOrigin).protocol.slice(0, -1) as "http" | "https",
@@ -35,11 +34,11 @@ const supabaseImagePattern = supabaseOrigin
 
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' ${productionAssetOrigin} 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
   "script-src-attr 'none'",
-  `style-src 'self' ${productionAssetOrigin} 'unsafe-inline'`,
+  "style-src 'self' 'unsafe-inline'",
   `img-src ${imageSources.join(" ")}`,
-  `font-src 'self' ${productionAssetOrigin} data:`,
+  "font-src 'self' data:",
   `connect-src ${connectSources.join(" ")}`,
   "frame-src https://yandex.ru",
   "worker-src 'self' blob:",
@@ -108,23 +107,10 @@ const securityHeaders = [
     : []),
 ];
 
-const crossOriginAssetHeaders = [
-  {
-    key: "Access-Control-Allow-Origin",
-    value: "*",
-  },
-  {
-    key: "Cross-Origin-Resource-Policy",
-    value: "cross-origin",
-  },
-];
-
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  assetPrefix: isDevelopment ? undefined : productionAssetOrigin,
   images: {
     unoptimized: isDevelopment,
-    path: isDevelopment ? "/_next/image" : `${productionAssetOrigin}/_next/image`,
     deviceSizes: [384, 640, 750, 828, 1080, 1200, 1440, 1920],
     imageSizes: [48, 64, 96, 128, 256],
     qualities: [70, 75],
@@ -143,23 +129,6 @@ const nextConfig: NextConfig = {
           key: "Content-Security-Policy",
           value: firebaseWorkerContentSecurityPolicy,
         }],
-      },
-      {
-        source: "/_next/static/:path*",
-        headers: crossOriginAssetHeaders,
-      },
-      {
-        source: "/_next/image",
-        headers: crossOriginAssetHeaders,
-      },
-      {
-        source: "/favicon.ico",
-        headers: crossOriginAssetHeaders,
-      },
-      {
-        source: "/:path*",
-        has: [{ type: "host", value: "raduyka-flowers.vercel.app" }],
-        headers: crossOriginAssetHeaders,
       },
     ];
   },
