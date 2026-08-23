@@ -141,7 +141,6 @@ const money = (value: number) =>
 const STORE_ADDRESS = "Екатеринбург, ул. Библиотечная, 43";
 const YANDEX_MAP_EMBED_URL = "https://yandex.ru/map-widget/v1/?ll=60.659323%2C56.833035&mode=search&oid=200831341309&ol=biz&z=17";
 const YANDEX_MAP_LINK = "https://yandex.ru/maps/-/CTSgV45D";
-const PRODUCTION_ASSET_ORIGIN = "https://raduyka-flowers.vercel.app";
 const LATEST_ORDER_STORAGE_KEY = "raduyka-latest-order-v2";
 const LATEST_ORDER_TTL_MS = 24 * 60 * 60_000;
 const ORDER_NUMBER_PATTERN = /^RAD-\d{6}-(?:\d{4}|[0-9A-F]{12})$/;
@@ -309,9 +308,7 @@ export default function Home() {
       if (refreshInFlight) return;
       refreshInFlight = true;
       try {
-        const productsApiUrl = ["raduika.ru", "www.raduika.ru"].includes(window.location.hostname)
-          ? `${PRODUCTION_ASSET_ORIGIN}/api/products`
-          : "/api/products";
+        const productsApiUrl = "/api/products";
         const response = await fetch(productsApiUrl);
         if (!response.ok) throw new Error("Каталог временно недоступен");
         const payload = await response.json() as { products?: Product[] };
