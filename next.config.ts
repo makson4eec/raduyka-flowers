@@ -120,6 +120,7 @@ const crossOriginAssetHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   assetPrefix: isDevelopment ? undefined : productionAssetOrigin,
   images: {
