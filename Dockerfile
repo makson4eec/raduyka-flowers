@@ -38,6 +38,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
+    NODE_OPTIONS=--dns-result-order=ipv4first \
     HOSTNAME=0.0.0.0 \
     PORT=3000
 COPY --from=builder --chown=node:node /app/public ./public
