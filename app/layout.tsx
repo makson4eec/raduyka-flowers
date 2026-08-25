@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: "Радуйка — букеты, которые говорят за вас",
   description:
     "Авторские букеты, свежие цветы, доставка и самовывоз. Соберите свой букет онлайн.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

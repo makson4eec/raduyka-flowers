@@ -21,7 +21,7 @@ export function getSupabasePublicConfig(): SupabasePublicConfig | null {
   const url = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const publicKey = clean(
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-      ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   );
 
   if (!url || !publicKey) return null;
