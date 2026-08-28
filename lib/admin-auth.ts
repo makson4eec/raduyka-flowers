@@ -14,7 +14,6 @@ export const ADMIN_COOKIE = process.env.NODE_ENV === "production"
 export const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 8;
 
 export const ADMIN_PASSWORD_MIN_LENGTH = process.env.NODE_ENV === "production" ? 16 : 1;
-const ADMIN_SESSION_SECRET_MIN_LENGTH = 32;
 const TOKEN_VERSION = "v1";
 
 function looksLikePlaceholder(value: string) {
@@ -25,35 +24,18 @@ function configuredPassword() {
   return process.env.ADMIN_PASSWORD?.trim() ?? "";
 }
 
-function configuredSessionSecret() {
-  return process.env.ADMIN_SESSION_SECRET?.trim() ?? "";
-}
-
 function signingSecret() {
   const password = configuredPassword();
-  const sessionSecret = configuredSessionSecret();
 
   if (
     password.length < ADMIN_PASSWORD_MIN_LENGTH
     || looksLikePlaceholder(password)
   ) return null;
-  if (
-    process.env.NODE_ENV === "production"
-    && (
-      sessionSecret.length < ADMIN_SESSION_SECRET_MIN_LENGTH
-      || looksLikePlaceholder(sessionSecret)
-    )
-  ) {
-    return null;
-  }
 
-  // Development remains usable before a separate secret is configured, while
-  // production fails closed. The password is included so rotating it revokes
-  // every existing session immediately.
+  // The password is never stored in the cookie. A domain-separated digest is
+  // used as the HMAC key, so rotating the password revokes existing sessions.
   return createHash("sha256")
     .update("raduyka-admin-session-v1")
-    .update("\0")
-    .update(sessionSecret || "development-only-session-secret")
     .update("\0")
     .update(password)
     .digest();
@@ -72,21 +54,11 @@ function sign(payload: string, secret: Buffer) {
 export function adminConfigurationIssues() {
   const issues: string[] = [];
   const password = configuredPassword();
-  const sessionSecret = configuredSessionSecret();
   if (
     password.length < ADMIN_PASSWORD_MIN_LENGTH
     || looksLikePlaceholder(password)
   ) {
     issues.push(`ADMIN_PASSWORD должен содержать не менее ${ADMIN_PASSWORD_MIN_LENGTH} символов.`);
-  }
-  if (
-    process.env.NODE_ENV === "production"
-    && (
-      sessionSecret.length < ADMIN_SESSION_SECRET_MIN_LENGTH
-      || looksLikePlaceholder(sessionSecret)
-    )
-  ) {
-    issues.push(`ADMIN_SESSION_SECRET должен содержать не менее ${ADMIN_SESSION_SECRET_MIN_LENGTH} символов.`);
   }
   return issues;
 }

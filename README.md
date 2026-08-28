@@ -61,7 +61,6 @@ npm.cmd run migrate:supabase
 Критичные server-only переменные:
 
 - `ADMIN_PASSWORD`
-- `ADMIN_SESSION_SECRET`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
@@ -95,7 +94,7 @@ Webhook не доверяет входящему событию вслепую: 
 
 1. Подключите GitHub-репозиторий.
 2. Импортируйте переменные окружения из `.env.local` в Vercel Environment Variables.
-3. Проверьте, что `ADMIN_SESSION_SECRET` и `CRON_SECRET` заполнены случайными значениями.
+3. Проверьте, что `ADMIN_PASSWORD` и `CRON_SECRET` заполнены надёжными значениями.
 4. Выполните Deploy.
 5. После появления production-адреса проверьте регистрацию, `/admin`, создание заказа, загрузку изображения и push-уведомления.
 

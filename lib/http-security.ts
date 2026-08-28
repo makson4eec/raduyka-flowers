@@ -166,9 +166,15 @@ export function isSameOriginMutation(request: Request) {
     return false;
   }
 
+  // Sec-Fetch-Site is a browser-controlled forbidden header and therefore
+  // remains reliable when a hosting proxy rewrites request.url to its internal
+  // origin. Native same-origin form submissions can otherwise be rejected on
+  // deployments where the public Host differs from that internal URL.
+  if (fetchSite === "same-origin") return true;
+
   const origin = request.headers.get("origin");
   if (!origin) {
-    return fetchSite === "same-origin" || fetchSite === "none";
+    return fetchSite === "none";
   }
 
   try {
