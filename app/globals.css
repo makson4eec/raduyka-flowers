@@ -1448,12 +1448,14 @@ details p {
 
 .delivery-route span {
   display: grid;
+  flex-shrink: 0;
   width: 90px;
   height: 90px;
   background: var(--white);
   border: 1.5px solid var(--navy);
   border-radius: 50%;
   place-items: center;
+  white-space: nowrap;
 }
 
 .delivery-route i {
@@ -3239,6 +3241,7 @@ details p {
   .delivery-route span {
     width: 66px;
     height: 66px;
+    font-size: 0.625rem;
   }
 
   .delivery-route i {
