@@ -1,14 +1,27 @@
+import { getDocumentVersion } from "@/lib/document-version";
+import { getSiteContent } from "@/lib/content-store";
+import EditableInfoDocument from "@/components/legal/EditableInfoDocument";
 import Link from "next/link";
 import {
   BONUS_EARN_PERCENT,
   BONUS_RUBLE_VALUE,
   BONUS_SPEND_PERCENT,
 } from "@/lib/bonus-rules";
-import { LEGAL_DOCUMENT_VERSION, sellerDisplayName } from "@/lib/legal";
+import { LEGAL_DOCUMENT_VERSION as ORIGINAL_LEGAL_DOCUMENT_VERSION } from "@/lib/legal";
 
-export const metadata = { title: "Правила бонусной программы — Радуйка" };
+export async function generateMetadata() {
+  const content = await getSiteContent();
+  return { title: content.pages["bonus-program"] ? content.pages["bonus-program"].title + " — Радуйка" : "Правила бонусной программы — Радуйка" };
+}
 
-export default function BonusProgramPage() {
+export const dynamic = "force-dynamic";
+
+export default async function BonusProgramPage() {
+  const content = await getSiteContent();
+  const LEGAL_DOCUMENT_VERSION = getDocumentVersion(content, "bonus-program", ORIGINAL_LEGAL_DOCUMENT_VERSION);
+  const sellerDisplayName = () => [content.settings.legalStatus, content.settings.legalName].filter(Boolean).join(" ");
+  if (content.pages["bonus-program"]) return <EditableInfoDocument page={{ ...content.pages["bonus-program"], version: getDocumentVersion(content, "bonus-program", LEGAL_DOCUMENT_VERSION) }} settings={content.settings} />;
+
   return (
     <main className="legal-document">
       <p className="eyebrow">Программа лояльности</p>

@@ -4714,3 +4714,12 @@ details p {
 @media (max-width: 640px) {
   .product-legal-info__grid p { grid-template-columns: 1fr; gap: 2px; }
 }
+.info-page { max-width: 980px; margin: 0 auto; }
+.info-page h1 { margin-bottom: 28px; }
+.info-content { overflow-wrap: anywhere; }
+.info-content h2 { margin: 30px 0 16px; font-size: clamp(1.5rem, 3vw, 2.5rem); }
+.info-content h3 { margin: 24px 0 12px; font-size: 1.3rem; }
+.info-content p, .info-content li { line-height: 1.7; }
+.info-content p { margin: 16px 0; }
+.info-content ul, .info-content ol { padding-left: 24px; }
+.info-content a { text-decoration: underline; text-underline-offset: 3px; }

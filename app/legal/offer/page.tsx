@@ -1,9 +1,23 @@
+import { getDocumentVersion } from "@/lib/document-version";
+import { getSiteContent } from "@/lib/content-store";
+import EditableInfoDocument from "@/components/legal/EditableInfoDocument";
 import Link from "next/link";
-import { LEGAL_DOCUMENT_VERSION, legalValue, sellerDetails, sellerDisplayName } from "@/lib/legal";
+import { LEGAL_DOCUMENT_VERSION as ORIGINAL_LEGAL_DOCUMENT_VERSION, legalValue } from "@/lib/legal";
 
-export const metadata = { title: "Публичная оферта — Радуйка" };
+export async function generateMetadata() {
+  const content = await getSiteContent();
+  return { title: content.pages["offer"] ? content.pages["offer"].title + " — Радуйка" : "Публичная оферта — Радуйка" };
+}
 
-export default function OfferPage() {
+export const dynamic = "force-dynamic";
+
+export default async function OfferPage() {
+  const content = await getSiteContent();
+  const LEGAL_DOCUMENT_VERSION = getDocumentVersion(content, "offer", ORIGINAL_LEGAL_DOCUMENT_VERSION);
+  const sellerDetails = content.settings;
+  const sellerDisplayName = () => [content.settings.legalStatus, content.settings.legalName].filter(Boolean).join(" ");
+  if (content.pages["offer"]) return <EditableInfoDocument page={{ ...content.pages["offer"], version: getDocumentVersion(content, "offer", LEGAL_DOCUMENT_VERSION) }} settings={content.settings} />;
+
   return (
     <main className="legal-document">
       <p className="eyebrow">Дистанционная продажа</p>

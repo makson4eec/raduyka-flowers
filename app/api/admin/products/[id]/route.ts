@@ -37,7 +37,7 @@ export async function PATCH(request: Request, context: Context) {
     if (!Number.isSafeInteger(id) || id <= 0) {
       return noStoreJson({ error: "Некорректный товар." }, { status: 400 });
     }
-    const input = parseProduct(await readJsonBody(request, 16 * 1_024));
+    const input = parseProduct(await readJsonBody(request, 64 * 1_024));
     if (!input.name || !input.image || input.price <= 0) {
       return noStoreJson(
         { error: "Укажите название, допустимую цену и фотографию." },

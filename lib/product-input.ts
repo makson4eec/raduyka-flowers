@@ -1,4 +1,4 @@
-import type { ProductInput, ProductVariant } from "./types";
+import type { ProductInput, ProductVariant, ShopCategoryInput } from "./types";
 
 const MAX_PRODUCT_PRICE = 10_000_000;
 const MAX_SORT_ORDER = 1_000_000;
@@ -40,6 +40,19 @@ function safeImagePath(value: unknown) {
     || isSupabaseProductImageUrl(image)
     ? image
     : "";
+}
+
+export function parseCategory(value: unknown): ShopCategoryInput {
+  const input = value && typeof value === "object" ? value as Partial<ShopCategoryInput> : {};
+  return {
+    name: String(input.name ?? "").trim().slice(0, 120),
+    description: String(input.description ?? "").trim().slice(0, 1000),
+    image: safeImagePath(input.image),
+    target: input.target === "flowers" || input.target === "delivery" ? input.target : "catalog",
+    theme: input.theme === "blush" ? "blush" : "cream",
+    visible: input.visible !== false,
+    sortOrder: boundedInteger(input.sortOrder, 0, MAX_SORT_ORDER),
+  };
 }
 
 function safeHttpUrl(value: unknown) {
@@ -116,6 +129,13 @@ export function parseProduct(value: unknown): ProductInput {
   const kind = input.kind === "builder" ? "builder" : input.kind === "flower" ? "flower" : "catalog";
   const catalogCategory = input.catalogCategory === "composition" ? "composition" : "bouquet";
   const variants = parseVariants(input.variants);
+  const image = safeImagePath(input.image);
+  const images = [...new Set([
+    image,
+    ...(Array.isArray(input.images) ? input.images.map(safeImagePath) : []),
+  ])].filter(Boolean).slice(0, 3);
+  const categoryId = typeof input.categoryId === "string" && /^[a-z0-9][a-z0-9-]{0,79}$/.test(input.categoryId)
+    ? input.categoryId : undefined;
 
   return {
     name: String(input.name ?? "").trim().slice(0, 120),
@@ -137,7 +157,9 @@ export function parseProduct(value: unknown): ProductInput {
       && oldPriceValue > price
         ? boundedInteger(oldPriceValue, 1, MAX_PRODUCT_PRICE)
         : undefined,
-    image: safeImagePath(input.image),
+    image,
+    images,
+    categoryId,
     tag: String(input.tag ?? "").trim().slice(0, 40) || undefined,
     stock: allowedStocks.includes(input.stock as (typeof allowedStocks)[number]) ? input.stock as ProductInput["stock"] : "today",
     size: ["S", "M", "L"].includes(String(input.size)) ? String(input.size) : "M",

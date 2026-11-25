@@ -10,9 +10,14 @@ import deliveryCategoryImage from "../public/images/bouquet-4.webp";
 import flowersCategoryImage from "../public/images/bouquet-6.webp";
 import compositionCategoryImage from "../public/images/composition-roses.webp";
 import heroBouquetImage from "../public/images/hero-bouquet.webp";
+import { defaultCategories, productCategoryId } from "../lib/categories";
+import { InfoSection } from "../components/InfoContent";
+import { defaultSettings, type SiteContent } from "../lib/site-content";
+import { getProductImages } from "../lib/product-images";
+import { getDocumentVersion } from "../lib/document-version";
 import { defaultProducts } from "../lib/catalog";
 import { optimizedImageSource } from "../lib/image-assets";
-import { LEGAL_DOCUMENT_VERSION, sellerDetails } from "../lib/legal";
+import { LEGAL_DOCUMENT_VERSION } from "../lib/legal";
 import {
   BONUS_EARN_PERCENT,
   BONUS_SPEND_PERCENT,
@@ -49,6 +54,7 @@ import type {
   ProductAddOn,
   ProductVariant,
   RecipientType,
+  ShopCategory,
 } from "../lib/types";
 
 type ProductImageProps = Omit<ImageProps, "src" | "unoptimized"> & {
@@ -138,9 +144,6 @@ type CartConfiguration = {
 const money = (value: number) =>
   new Intl.NumberFormat("ru-RU").format(value) + " ₽";
 
-const STORE_ADDRESS = "Екатеринбург, ул. Библиотечная, 43";
-const YANDEX_MAP_EMBED_URL = "https://yandex.ru/map-widget/v1/?ll=60.659323%2C56.833035&mode=search&oid=200831341309&ol=biz&z=17";
-const YANDEX_MAP_LINK = "https://yandex.ru/maps/-/CTSgV45D";
 const LATEST_ORDER_STORAGE_KEY = "raduyka-latest-order-v2";
 const LATEST_ORDER_TTL_MS = 24 * 60 * 60_000;
 const ORDER_NUMBER_PATTERN = /^RAD-\d{6}-(?:\d{4}|[0-9A-F]{12})$/;
@@ -258,6 +261,9 @@ function ProductCard({
 
 export default function Home() {
   const [products, setProducts] = useState<Product[]>(defaultProducts);
+  const [siteContent, setSiteContent] = useState<SiteContent>({ settings: defaultSettings, pages: {} });
+  const [categories, setCategories] = useState<ShopCategory[]>(defaultCategories);
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [view, setView] = useState<View>("home");
   const [selectedId, setSelectedId] = useState(1);
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -307,6 +313,17 @@ export default function Home() {
     const refreshProducts = async () => {
       if (refreshInFlight) return;
       refreshInFlight = true;
+      void fetch("/api/content").then(async (response) => {
+        if (response.ok) {
+          const payload = await response.json() as SiteContent;
+          if (active && payload.settings && payload.pages) setSiteContent(payload);
+        }
+      }).catch(() => {});
+      void fetch("/api/categories").then(async (response) => {
+        if (!response.ok) return;
+        const payload = await response.json() as { categories?: ShopCategory[] };
+        if (active && Array.isArray(payload.categories)) setCategories(payload.categories);
+      }).catch(() => {});
       try {
         const response = await fetch("/api/products");
         if (!response.ok) throw new Error("Каталог временно недоступен");
@@ -554,6 +571,7 @@ export default function Home() {
 
   const openCatalog = (filter: CatalogFilter = "Все") => {
     setCatalogFilter(filter);
+    setActiveCategoryId(null);
     go("catalog");
   };
 
@@ -763,7 +781,7 @@ export default function Home() {
           useBonus: bonus,
           cardAdded,
           offerAccepted: form.get("offerAccepted") === "on",
-          offerVersion: LEGAL_DOCUMENT_VERSION,
+          offerVersion: getDocumentVersion(siteContent, "offer", LEGAL_DOCUMENT_VERSION),
           items: cart.map((line) => ({
             productId: line.productId,
             quantity: line.quantity,
@@ -844,15 +862,16 @@ export default function Home() {
   const selectedProductVariants = selectedProductIsFlower
     ? getProductVariants(selectedProduct)
     : [];
-  const displayedGalleryImage = selectedProductIsFlower
-    ? (
-      selectedProductVariants.some((variant) => variant.image === galleryImage)
-        ? galleryImage
-        : getVariantImage(selectedProduct, selectedVariant)
-    )
-    : (
-      galleryImage || getVariantImage(selectedProduct, selectedVariant)
-    );
+  const selectedGalleryImages = getProductImages(selectedProduct);
+  const displayedGalleryImage = [...selectedGalleryImages, ...selectedProductVariants.map((v) => v.image), ...(!selectedProductIsFlower && !selectedProductIsBalloons && selectedGalleryImages.length === 1 ? ["/images/florist-workshop.webp"] : [])].includes(galleryImage)
+    ? galleryImage : getVariantImage(selectedProduct, selectedVariant);
+  const activeCategory = categories.find((category) => category.id === activeCategoryId);
+  const openShopCategory = (category: ShopCategory) => {
+    if (category.target === "delivery") { go("delivery"); return; }
+    setActiveCategoryId(category.id);
+    setCatalogFilter("Все");
+    go(category.target === "flowers" ? "flowers" : "catalog");
+  };
   const selectedProductPrice = selectedProductIsFlower
     ? getVariantPrice(selectedProduct, selectedVariant)
     : Math.max(
@@ -873,21 +892,22 @@ export default function Home() {
     let result = products.filter((item) => (
       catalogFilter === "Цветы" ? item.kind === "flower" : item.kind === "catalog"
     ) && item.stock !== "soon");
+    if (activeCategoryId) result = result.filter((item) => productCategoryId(item) === activeCategoryId);
     if (catalogFilter === "До 4 000 ₽") result = result.filter((item) => item.price <= 4000);
     if (catalogFilter === "Нежные") result = result.filter((item) => item.palette === "pink" || item.palette === "white");
-    if (catalogFilter === "Шары") result = result.filter(isBalloonProduct);
-    if (catalogFilter === "Композиции") result = result.filter(isCompositionProduct);
+    if (catalogFilter === "Шары") result = result.filter((item) => productCategoryId(item) === "balloons");
+    if (catalogFilter === "Композиции") result = result.filter((item) => productCategoryId(item) === "composition");
     if (sort === "Популярные") result = [...result].sort((a, b) => Number(b.featured) - Number(a.featured) || a.sortOrder - b.sortOrder);
     if (sort === "Сначала дешевле") result = [...result].sort((a, b) => a.price - b.price);
     if (sort === "Сначала дороже") result = [...result].sort((a, b) => b.price - a.price);
     return result;
-  }, [catalogFilter, products, sort]);
+  }, [activeCategoryId, catalogFilter, products, sort]);
 
   const flowerProducts = useMemo(
     () => products
-      .filter((product) => product.kind === "flower" && product.stock !== "soon")
+      .filter((product) => product.kind === "flower" && product.stock !== "soon" && (!activeCategoryId || productCategoryId(product) === activeCategoryId))
       .sort((a, b) => Number(b.featured) - Number(a.featured) || a.sortOrder - b.sortOrder),
-    [products],
+    [activeCategoryId, products],
   );
 
   const featuredProducts = useMemo(
@@ -947,11 +967,16 @@ export default function Home() {
             </section>
 
             <section className="category-grid section-pad" aria-label="Категории">
-              <button onClick={() => openCatalog()} className="category category--cream"><span>Букеты</span><Icon name="arrow" /><Image src={bouquetCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
-              <button onClick={() => go("flowers")} className="category category--blush"><span>Цветы</span><Icon name="arrow" /><Image src={flowersCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
-              <button onClick={() => go("delivery")} className="category category--cream"><span>Доставка<br />по городу</span><Icon name="arrow" /><Image src={deliveryCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
-              <button onClick={() => openCatalog("Композиции")} className="category category--blush"><span>Цветочные<br />композиции</span><Icon name="arrow" /><Image src={compositionCategoryImage} alt="" sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder="blur" /></button>
-              <button onClick={() => openCatalog("Шары")} className="category category--cream category--balloons"><span>Воздушные<br />шары</span><Icon name="arrow" /><Image src="/images/balloons.svg" alt="" width={800} height={800} sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" /></button>
+              {categories.filter((category) => category.visible).map((category) => {
+                const imageSources: Record<string, typeof bouquetCategoryImage> = {
+                  "/images/bouquet-3.webp": bouquetCategoryImage,
+                  "/images/bouquet-6.webp": flowersCategoryImage,
+                  "/images/bouquet-4.webp": deliveryCategoryImage,
+                  "/images/composition-roses.webp": compositionCategoryImage,
+                };
+                const source = imageSources[category.image];
+                return <button key={category.id} onClick={() => openShopCategory(category)} className={`category category--${category.theme}${category.id === "balloons" ? " category--balloons" : ""}`}><span style={{ whiteSpace: "pre-line" }}>{category.name}</span><Icon name="arrow" /><Image src={source || category.image} alt="" width={800} height={800} sizes="(max-width: 680px) 56vw, (max-width: 1050px) 28vw, 12vw" quality={70} placeholder={source ? "blur" : "empty"} /></button>;
+              })}
             </section>
 
             <section className="promise-strip section-pad">
@@ -1039,9 +1064,12 @@ export default function Home() {
 
         {view === "catalog" && (
           <section className="section-pad page-section">
-            <div className="page-hero page-hero--lime page-hero--media"><div className="page-hero__photo"><Image src="/images/hero-bouquet.webp" alt="Нежный букет роз" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Собраны флористами</p><h1>Каталог</h1><p>Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов.</p></div></div>
+            <div className="page-hero page-hero--lime page-hero--media"><div className="page-hero__photo"><Image src="/images/hero-bouquet.webp" alt="Нежный букет роз" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Собраны флористами</p><h1>{activeCategory?.name || "Каталог"}</h1><p>{activeCategory?.description || "Букеты, композиции и дополнения для тёплых поводов и приятных сюрпризов."}</p></div></div>
             <div className="catalog-toolbar">
-              <div className="filter-chips">{(["Все", "Цветы", "До 4 000 ₽", "Нежные", "Композиции", "Шары"] as CatalogFilter[]).map((item) => <button key={item} className={catalogFilter === item ? "is-active" : ""} onClick={() => setCatalogFilter(item)}>{item}</button>)}</div>
+              <div className="filter-chips">
+                {(["Все", "Цветы", "До 4 000 ₽", "Нежные"] as CatalogFilter[]).filter((item) => item !== "Цветы" || categories.some((c) => c.id === "flowers" && c.visible)).map((item) => <button key={item} className={!activeCategoryId && catalogFilter === item ? "is-active" : ""} onClick={() => { setActiveCategoryId(null); setCatalogFilter(item); }}>{item === "Цветы" ? categories.find((c) => c.id === "flowers")?.name || item : item}</button>)}
+                {categories.filter((c) => c.visible && c.target === "catalog" && c.id !== "bouquet").map((c) => <button key={c.id} className={activeCategoryId === c.id ? "is-active" : ""} onClick={() => openShopCategory(c)}>{c.id === "composition" && c.name === "Цветочные\nкомпозиции" ? "Композиции" : c.id === "balloons" && c.name === "Воздушные\nшары" ? "Шары" : c.name}</button>)}
+              </div>
               <label>Сортировка<select value={sort} onChange={(event) => setSort(event.target.value)}><option>Популярные</option><option>Сначала дешевле</option><option>Сначала дороже</option></select></label>
             </div>
             <div className="catalog-info"><span>Найдено: {catalogProducts.length}</span><span>Цены обновляются автоматически</span></div>
@@ -1078,17 +1106,13 @@ export default function Home() {
                         <ProductImage src={variant.image} alt={`${selectedProduct.name}, ${variant.label}`} width={92} height={92} sizes="92px" />
                       </button>
                     ))
-                    : (
-                      <button
-                        className={!galleryImage || galleryImage === selectedProduct.image ? "is-active" : ""}
-                        aria-label="Показать товар"
-                        aria-pressed={!galleryImage || galleryImage === selectedProduct.image}
-                        onClick={() => setGalleryImage(selectedProduct.image)}
-                      >
-                        <ProductImage src={selectedProduct.image} alt="Вид товара" width={92} height={92} sizes="92px" />
+                    : selectedGalleryImages.map((image, index) => (
+                      <button key={image} className={displayedGalleryImage === image ? "is-active" : ""} aria-label={`Показать фото ${index + 1}`} aria-pressed={displayedGalleryImage === image} onClick={() => setGalleryImage(image)}>
+                        <ProductImage src={image} alt={`Вид товара ${index + 1}`} width={92} height={92} sizes="92px" />
                       </button>
-                    )}
-                  {!selectedProductIsBalloons && !selectedProductIsFlower && <button className={galleryImage === "/images/florist-workshop.webp" ? "is-active" : ""} aria-label="Показать процесс сборки" aria-pressed={galleryImage === "/images/florist-workshop.webp"} onClick={() => setGalleryImage("/images/florist-workshop.webp")}><Image src="/images/florist-workshop.webp" alt="Сборка флористом" width={92} height={92} sizes="92px" /></button>}
+                    ))}
+                  {selectedProductIsFlower && selectedProductVariants.length > 0 && selectedGalleryImages.slice(1).map((image, index) => <button key={image} className={displayedGalleryImage === image ? "is-active" : ""} aria-label={`Показать фото ${index + 2}`} aria-pressed={displayedGalleryImage === image} onClick={() => setGalleryImage(image)}><ProductImage src={image} alt={`Вид товара ${index + 2}`} width={92} height={92} sizes="92px" /></button>)}
+                  {!selectedProductIsBalloons && !selectedProductIsFlower && selectedGalleryImages.length === 1 && <button className={galleryImage === "/images/florist-workshop.webp" ? "is-active" : ""} aria-label="Показать процесс сборки" aria-pressed={galleryImage === "/images/florist-workshop.webp"} onClick={() => setGalleryImage("/images/florist-workshop.webp")}><Image src="/images/florist-workshop.webp" alt="Сборка флористом" width={92} height={92} sizes="92px" /></button>}
                   <button className="photo-note" onClick={() => notify("Фото готового заказа пришлём перед доставкой")}>Фото<br />перед<br />доставкой</button>
                 </div>
               </div>
@@ -1177,6 +1201,7 @@ export default function Home() {
 
         {view === "occasion" && (
           <section className="section-pad page-section">
+            <InfoSection page={siteContent.pages.occasion} settings={siteContent.settings}>
             <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><Image src="/images/bouquet-1.webp" alt="Яркий букет гербер" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div></div>
             <div className="occasion-grid">{[
               ["День рождения", "Ярко, празднично и с вау-эффектом", "01"],
@@ -1187,28 +1212,30 @@ export default function Home() {
               ["Не знаю, что выбрать", "Ответьте на один вопрос — поможем", "06"],
             ].map(([title,text,index], i) => <button key={title} className={i === 5 ? "occasion-card occasion-card--lime" : "occasion-card"} onClick={() => { if (i === 5) { setGiftOpen(true); } else { openCatalog(i === 1 ? "Нежные" : i === 2 ? "До 4 000 ₽" : "Все"); } }}><span>{index}</span><h3>{title}</h3><p>{text}</p><Icon name="arrow" /></button>)}</div>
             <div className="reminder-banner"><div><Icon name="gift" /></div><section><p className="eyebrow">Больше не забывать</p><h2>Напомним о важных датах</h2><p>Сохраняйте события в личном кабинете и получайте напоминания заранее.</p></section><Link className="button button--navy" href="/account?new=1">Добавить дату</Link></div>
+          </InfoSection>
           </section>
         )}
 
         {view === "delivery" && (
           <section className="section-pad page-section">
+            <InfoSection page={siteContent.pages.delivery} settings={siteContent.settings}>
             <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><Image src="/images/bouquet-5.webp" alt="Свежие гортензии" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div></div>
-            <div className="delivery-grid"><article><span>01</span><h3>По тарифу сервиса</h3><strong>После адреса</strong><p>Яндекс Доставка рассчитает стоимость после проверки указанного адреса.</p></article><article><span>02</span><h3>Согласуем заранее</h3><strong>До оплаты</strong><p>Сообщим итоговую стоимость доставки вместе с подтверждением заказа.</p></article><article><span>03</span><h3>Самовывоз</h3><strong>Бесплатно</strong><p>{STORE_ADDRESS}. Сообщим, когда заказ будет готов.</p></article></div>
+            <div className="delivery-grid"><article><span>01</span><h3>По тарифу сервиса</h3><strong>После адреса</strong><p>Яндекс Доставка рассчитает стоимость после проверки указанного адреса.</p></article><article><span>02</span><h3>Согласуем заранее</h3><strong>До оплаты</strong><p>Сообщим итоговую стоимость доставки вместе с подтверждением заказа.</p></article><article><span>03</span><h3>Самовывоз</h3><strong>Бесплатно</strong><p>{siteContent.settings.address}. Сообщим, когда заказ будет готов.</p></article></div>
             <section className="studio-location" aria-labelledby="studio-location-title">
               <div className="studio-location__copy">
                 <p className="eyebrow">Самовывоз и контакты</p>
                 <h2 id="studio-location-title">Наша студия</h2>
-                <address>{STORE_ADDRESS}</address>
+                <address>{siteContent.settings.address}</address>
                 <div className="studio-hours" aria-label="Время работы">
-                  <div><span>Понедельник — пятница</span><b>09:00–21:00</b></div>
-                  <div><span>Суббота — воскресенье</span><b>10:00–21:00</b></div>
+                  <div><span>Понедельник — пятница</span><b>{siteContent.settings.hoursWeekdays.replace(/^Пн–Пт:\s*/, "")}</b></div>
+                  <div><span>Суббота — воскресенье</span><b>{siteContent.settings.hoursWeekend.replace(/^Сб–Вс:\s*/, "")}</b></div>
                 </div>
-                <a className="studio-location__link" href={YANDEX_MAP_LINK} target="_blank" rel="noreferrer">Открыть в Яндекс Картах ↗</a>
+                <a className="studio-location__link" href={siteContent.settings.mapLink} target="_blank" rel="noreferrer">Открыть в Яндекс Картах ↗</a>
               </div>
               <div className="studio-location__map">
                 {mapLoaded ? (
                   <iframe
-                    src={YANDEX_MAP_EMBED_URL}
+                    src={siteContent.settings.mapEmbedUrl}
                     title="Радуйка на Яндекс Картах"
                     loading="lazy"
                     allowFullScreen
@@ -1226,14 +1253,17 @@ export default function Home() {
             </section>
             <div className="how-delivery"><div><p className="eyebrow">Как всё происходит</p><h2>От оформления до передачи заказа</h2></div><ol><li><span>1</span><div><b>Вы оформляете заказ</b><p>Указываете только необходимые для исполнения заказа данные.</p></div></li><li><span>2</span><div><b>Сотрудник подтверждает условия</b><p>Проверяет состав, наличие и, при доставке, сообщает её стоимость до оплаты.</p></div></li><li><span>3</span><div><b>Заказ передаётся получателю</b><p>После подтверждения и оплаты заказ передаётся выбранным способом.</p></div></li></ol></div>
             <div className="faq"><h2>Частые вопросы</h2>{["Можно доставить, если я не знаю точный адрес?", "Получатель увидит стоимость?", "Что будет, если получателя нет на месте?"].map((item, index) => <details key={item} open={index === 0}><summary>{item}</summary><p>{index === 0 ? "Да. Укажите телефон — мы аккуратно уточним удобное место и время, не раскрывая сюрприз." : "Менеджер свяжется с вами и согласует следующий шаг. Все детали заказа остаются у отправителя."}</p></details>)}</div>
+          </InfoSection>
           </section>
         )}
 
         {view === "about" && (
           <section className="section-pad page-section">
+            <InfoSection page={siteContent.pages.about} settings={siteContent.settings}>
             <div className="about-hero"><div><p className="eyebrow">Радость — в живых деталях</p><h1>Не копируем букеты.<br />Собираем эмоции.</h1><p>«Радуйка» — цветочная студия, где современная флористика встречается с человеческой заботой. Каждый заказ собираем вручную в день доставки.</p></div><Image src="/images/florist-workshop.webp" alt="Работа флориста Радуйки" width={1271} height={1237} sizes="(max-width: 900px) 100vw, 55vw" /></div>
             <div className="values-grid"><article><span>01</span><h3>Живые цветы</h3><p>Оттенок, размер и степень раскрытия бутонов естественно различаются. Это учитываем при сборке.</p></article><article><span>02</span><h3>Сохраняем характер</h3><p>При допустимых природных отличиях ориентируемся на выбранную палитру, объём и общий образ букета.</p></article><article><span>03</span><h3>Согласуем существенное</h3><p>Заметные замены состава или изменение стоимости подтверждаем с покупателем до оплаты или передачи заказа.</p></article></div>
             <div className="team-note"><div className="team-note__number">12</div><div><p className="eyebrow">Флористов и курьеров</p><h2>Одна команда, которая отвечает за результат</h2><p>От первого сообщения до вручения букета у заказа есть конкретные люди, а не безымянный конвейер.</p></div><button className="button button--light" onClick={() => openCatalog()}>Выбрать букет</button></div>
+          </InfoSection>
           </section>
         )}
 
@@ -1346,7 +1376,7 @@ export default function Home() {
                     </label>
                     <label className={checkoutDelivery === "pickup" ? "is-active" : ""}>
                       <input type="radio" name="delivery" checked={checkoutDelivery === "pickup"} onChange={() => setCheckoutDelivery("pickup")} />
-                      <b>Самовывоз</b><small>Библиотечная, 43 · бесплатно</small>
+                      <b>Самовывоз</b><small>{siteContent.settings.address} · бесплатно</small>
                     </label>
                   </div>
                   <p className="checkout-choice-title">Для кого оформляем заказ?</p>
@@ -1396,7 +1426,7 @@ export default function Home() {
                     {checkoutDelivery === "delivery" ? (
                       <><b>Доставку выполняет Яндекс Доставка</b><p>Сотрудник проверит заказ и адрес, сообщит стоимость доставки и пришлёт ссылку на оплату. Сейчас деньги не списываются.</p></>
                     ) : (
-                      <><b>Самовывоз: Библиотечная, 43</b><p>Сотрудник проверит заказ, пришлёт ссылку на оплату и сообщит, когда всё будет готово. В будни работаем 09:00–21:00, в выходные — 10:00–21:00.</p></>
+                      <><b>Самовывоз: {siteContent.settings.address}</b><p>Сотрудник проверит заказ, пришлёт ссылку на оплату и сообщит, когда всё будет готово. Режим работы: {siteContent.settings.hoursWeekdays}, {siteContent.settings.hoursWeekend}.</p></>
                     )}
                   </div>
                 </fieldset>
@@ -1425,17 +1455,17 @@ export default function Home() {
                 {cardAdded && <div className="mini-line mini-line--card"><span>✎</span><span><b>Открытка</b><small>{money(cardFee)}</small></span></div>}
                 {bonus && <div className="summary-line summary-line--pink"><span>Бонусы</span><b>−{money(discount)}</b></div>}
                 <div className="summary-total"><span>Предварительно</span><strong>{money(total)}</strong></div>
-                <p>{checkoutDelivery === "delivery" ? "Стоимость Яндекс Доставки в предварительную сумму не входит — её подтвердит сотрудник до оплаты." : `Самовывоз бесплатный: ${STORE_ADDRESS}. Сотрудник сообщит, когда заказ можно забрать.`}</p>
+                <p>{checkoutDelivery === "delivery" ? "Стоимость Яндекс Доставки в предварительную сумму не входит — её подтвердит сотрудник до оплаты." : `Самовывоз бесплатный: ${siteContent.settings.address}. Сотрудник сообщит, когда заказ можно забрать.`}</p>
               </aside>
             </div>
           </section>
         )}
 
-        {view === "success" && <section className="success-page section-pad"><div className="success-mark"><Icon name="check" /></div><p className="eyebrow">Заказ {orderNumber || "принят"}</p><h1>Заявка уже у<br />сотрудника</h1><p>{checkoutDelivery === "delivery" ? "Сотрудник проверит состав, адрес и тариф Яндекс Доставки, затем свяжется с вами и пришлёт ссылку на оплату." : `Сотрудник проверит состав и сообщит, когда заказ будет готов к самовывозу по адресу: ${STORE_ADDRESS}.`}</p><p className="legal-helper">Номер заказа подтверждает оформление. Условия дистанционной продажи доступны в <Link href="/legal/offer">публичной оферте</Link>.</p><div className="success-steps"><span className="is-active">Заказ принят</span><i /><span>Подтверждение</span><i /><span>Сборка</span></div><button className="button button--navy" onClick={() => void checkOrderStatus()}>Следить за заказом</button><button className="text-link" onClick={() => go("home")}>Вернуться на главную</button></section>}
+        {view === "success" && <section className="success-page section-pad"><div className="success-mark"><Icon name="check" /></div><p className="eyebrow">Заказ {orderNumber || "принят"}</p><h1>Заявка уже у<br />сотрудника</h1><p>{checkoutDelivery === "delivery" ? "Сотрудник проверит состав, адрес и тариф Яндекс Доставки, затем свяжется с вами и пришлёт ссылку на оплату." : `Сотрудник проверит состав и сообщит, когда заказ будет готов к самовывозу по адресу: ${siteContent.settings.address}.`}</p><p className="legal-helper">Номер заказа подтверждает оформление. Условия дистанционной продажи доступны в <Link href="/legal/offer">публичной оферте</Link>.</p><div className="success-steps"><span className="is-active">Заказ принят</span><i /><span>Подтверждение</span><i /><span>Сборка</span></div><button className="button button--navy" onClick={() => void checkOrderStatus()}>Следить за заказом</button><button className="text-link" onClick={() => go("home")}>Вернуться на главную</button></section>}
 
       </main>
 
-      {view !== "success" && <footer className="site-footer section-pad"><div className="footer-top"><div><button className="brand brand--footer" onClick={() => go("home")}>РАДУЙКА</button><p>Букеты, которые говорят за вас.</p></div><div><b>Магазин</b><button onClick={() => openCatalog()}>Каталог</button><button onClick={() => go("flowers")}>Цветы</button><button onClick={startBuilder}>Собрать букет</button><button onClick={() => go("occasion")}>Поводы</button></div><div><b>Покупателям</b><button onClick={() => go("delivery")}>Доставка</button><Link href="/legal/payment-delivery">Оплата и доставка</Link><Link href="/legal/bonus-program">Бонусная программа</Link><Link href="/legal/returns-claims">Возврат и претензии</Link><Link href="/legal/offer">Публичная оферта</Link><Link href="/account">Личный кабинет</Link></div><div><b>Мы на связи</b>{sellerDetails.phone ? <a href={`tel:${sellerDetails.phone.replace(/[^+\d]/g, "")}`}>{sellerDetails.phone}</a> : <span>Телефон: __________________</span>}{sellerDetails.email ? <a href={`mailto:${sellerDetails.email}`}>{sellerDetails.email}</a> : <span>E-mail: __________________</span>}<a href={YANDEX_MAP_LINK} target="_blank" rel="noreferrer">{STORE_ADDRESS}</a><span>Пн–Пт: 09:00–21:00</span><span>Сб–Вс: 10:00–21:00</span></div></div><div className="footer-bottom"><span>© 2026 Радуйка</span><Link href="/legal/seller">Сведения о продавце</Link><Link href="/legal/privacy">Персональные данные</Link><Link href="/legal/personal-data-consent">Согласие на ПД</Link><Link href="/legal/cookies">Cookies</Link></div></footer>}
+      {view !== "success" && <footer className="site-footer section-pad"><div className="footer-top"><div><button className="brand brand--footer" onClick={() => go("home")}>РАДУЙКА</button><p>Букеты, которые говорят за вас.</p></div><div><b>Магазин</b><button onClick={() => openCatalog()}>Каталог</button><button onClick={() => { setActiveCategoryId(null); go("flowers"); }}>Цветы</button><button onClick={startBuilder}>Собрать букет</button><button onClick={() => go("occasion")}>Поводы</button></div><div><b>Покупателям</b><button onClick={() => go("delivery")}>Доставка</button><Link href="/legal/payment-delivery">Оплата и доставка</Link><Link href="/legal/bonus-program">Бонусная программа</Link><Link href="/legal/returns-claims">Возврат и претензии</Link><Link href="/legal/offer">Публичная оферта</Link><Link href="/account">Личный кабинет</Link></div><div><b>Мы на связи</b>{siteContent.settings.phone ? <a href={`tel:${siteContent.settings.phone.replace(/[^+\d]/g, "")}`}>{siteContent.settings.phone}</a> : <span>Телефон: __________________</span>}{siteContent.settings.email ? <a href={`mailto:${siteContent.settings.email}`}>{siteContent.settings.email}</a> : <span>E-mail: __________________</span>}<a href={siteContent.settings.mapLink} target="_blank" rel="noreferrer">{siteContent.settings.address}</a><span>{siteContent.settings.hoursWeekdays}</span><span>{siteContent.settings.hoursWeekend}</span></div></div><div className="footer-bottom"><span>© 2026 Радуйка</span><Link href="/legal/seller">Сведения о продавце</Link><Link href="/legal/privacy">Персональные данные</Link><Link href="/legal/personal-data-consent">Согласие на ПД</Link><Link href="/legal/cookies">Cookies</Link></div></footer>}
 
       {searchOpen && (
         <div className="overlay" role="dialog" aria-modal="true" aria-label="Поиск" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}>

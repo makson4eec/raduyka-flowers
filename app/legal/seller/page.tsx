@@ -1,9 +1,23 @@
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal";
+import { getDocumentVersion } from "@/lib/document-version";
+import { getSiteContent } from "@/lib/content-store";
+import EditableInfoDocument from "@/components/legal/EditableInfoDocument";
 import Link from "next/link";
-import { legalValue, sellerDetails, sellerDisplayName } from "@/lib/legal";
+import { legalValue } from "@/lib/legal";
 
-export const metadata = { title: "Сведения о продавце — Радуйка" };
+export async function generateMetadata() {
+  const content = await getSiteContent();
+  return { title: content.pages["seller"] ? content.pages["seller"].title + " — Радуйка" : "Сведения о продавце — Радуйка" };
+}
 
-export default function SellerPage() {
+export const dynamic = "force-dynamic";
+
+export default async function SellerPage() {
+  const content = await getSiteContent();
+  const sellerDetails = content.settings;
+  const sellerDisplayName = () => [content.settings.legalStatus, content.settings.legalName].filter(Boolean).join(" ");
+  if (content.pages["seller"]) return <EditableInfoDocument page={{ ...content.pages["seller"], version: getDocumentVersion(content, "seller", LEGAL_DOCUMENT_VERSION) }} settings={content.settings} />;
+
   return (
     <main className="legal-document">
       <p className="eyebrow">Информация для покупателей</p>

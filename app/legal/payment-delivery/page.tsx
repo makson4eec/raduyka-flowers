@@ -1,9 +1,22 @@
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal";
+import { getDocumentVersion } from "@/lib/document-version";
+import { getSiteContent } from "@/lib/content-store";
+import EditableInfoDocument from "@/components/legal/EditableInfoDocument";
 import Link from "next/link";
-import { legalValue, sellerDetails } from "@/lib/legal";
+import { legalValue } from "@/lib/legal";
 
-export const metadata = { title: "Оплата и доставка — Радуйка" };
+export async function generateMetadata() {
+  const content = await getSiteContent();
+  return { title: content.pages["payment-delivery"] ? content.pages["payment-delivery"].title + " — Радуйка" : "Оплата и доставка — Радуйка" };
+}
 
-export default function PaymentDeliveryPage() {
+export const dynamic = "force-dynamic";
+
+export default async function PaymentDeliveryPage() {
+  const content = await getSiteContent();
+  const sellerDetails = content.settings;
+  if (content.pages["payment-delivery"]) return <EditableInfoDocument page={{ ...content.pages["payment-delivery"], version: getDocumentVersion(content, "payment-delivery", LEGAL_DOCUMENT_VERSION) }} settings={content.settings} />;
+
   return (
     <main className="legal-document">
       <p className="eyebrow">Условия заказа</p>

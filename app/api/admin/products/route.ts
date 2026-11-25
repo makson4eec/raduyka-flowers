@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   if (!(await getAuthorizedAdmin())) return unauthorizedResponse();
   try {
     assertSameOriginMutation(request);
-    const input = parseProduct(await readJsonBody(request, 16 * 1_024));
+    const input = parseProduct(await readJsonBody(request, 64 * 1_024));
     if (!input.name || !input.image || input.price <= 0) {
       return noStoreJson(
         { error: "Укажите название, допустимую цену и фотографию." },

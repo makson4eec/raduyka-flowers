@@ -1,8 +1,20 @@
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal";
+import { getDocumentVersion } from "@/lib/document-version";
+import { getSiteContent } from "@/lib/content-store";
+import EditableInfoDocument from "@/components/legal/EditableInfoDocument";
 import Link from "next/link";
 
-export const metadata = { title: "Политика cookies — Радуйка" };
+export async function generateMetadata() {
+  const content = await getSiteContent();
+  return { title: content.pages["cookies"] ? content.pages["cookies"].title + " — Радуйка" : "Политика cookies — Радуйка" };
+}
 
-export default function CookiesPage() {
+export const dynamic = "force-dynamic";
+
+export default async function CookiesPage() {
+  const content = await getSiteContent();
+  if (content.pages["cookies"]) return <EditableInfoDocument page={{ ...content.pages["cookies"], version: getDocumentVersion(content, "cookies", LEGAL_DOCUMENT_VERSION) }} settings={content.settings} />;
+
   return (
     <main className="legal-document">
       <p className="eyebrow">Технические данные</p>

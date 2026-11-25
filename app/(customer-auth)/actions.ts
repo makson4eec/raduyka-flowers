@@ -9,6 +9,8 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { configuredSiteOrigin, normalizeRequestOrigin } from "@/lib/site-url";
 import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal";
+import { getSiteContent } from "@/lib/content-store";
+import { getDocumentVersion } from "@/lib/document-version";
 
 export type CustomerAuthField =
   | "name"
@@ -194,7 +196,7 @@ export async function registerAction(
       options: {
         data: {
           name: parsed.data.name,
-          personal_data_consent_version: LEGAL_DOCUMENT_VERSION,
+          personal_data_consent_version: getDocumentVersion(await getSiteContent(), "personal-data-consent", LEGAL_DOCUMENT_VERSION),
           personal_data_consent_at: new Date().toISOString(),
         },
         emailRedirectTo: callbackUrl(origin, "/account"),

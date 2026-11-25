@@ -1,9 +1,22 @@
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal";
+import { getDocumentVersion } from "@/lib/document-version";
+import { getSiteContent } from "@/lib/content-store";
+import EditableInfoDocument from "@/components/legal/EditableInfoDocument";
 import Link from "next/link";
-import { legalValue, sellerDetails } from "@/lib/legal";
+import { legalValue } from "@/lib/legal";
 
-export const metadata = { title: "Возврат и претензии — Радуйка" };
+export async function generateMetadata() {
+  const content = await getSiteContent();
+  return { title: content.pages["returns-claims"] ? content.pages["returns-claims"].title + " — Радуйка" : "Возврат и претензии — Радуйка" };
+}
 
-export default function ReturnsClaimsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function ReturnsClaimsPage() {
+  const content = await getSiteContent();
+  const sellerDetails = content.settings;
+  if (content.pages["returns-claims"]) return <EditableInfoDocument page={{ ...content.pages["returns-claims"], version: getDocumentVersion(content, "returns-claims", LEGAL_DOCUMENT_VERSION) }} settings={content.settings} />;
+
   return (
     <main className="legal-document">
       <p className="eyebrow">Права покупателя</p>

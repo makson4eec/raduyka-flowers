@@ -18,6 +18,10 @@ import {
   productAddOnsPrice,
 } from "./order-options";
 import { LEGAL_DOCUMENT_VERSION } from "./legal";
+import { defaultCategories, productCategoryId } from "./categories";
+import { getProductImages } from "./product-images";
+import { getSiteContent } from "./content-store";
+import { getDocumentVersion } from "./document-version";
 import type {
   BouquetSize,
   BuilderSelection,
@@ -30,6 +34,8 @@ import type {
   ProductAddOn,
   ProductInput,
   ProductVariant,
+  ShopCategory,
+  ShopCategoryInput,
 } from "./types";
 
 type StoredOrder = Order & {
@@ -72,6 +78,8 @@ type ProductRow = {
   price: number;
   old_price: number | null;
   image: string;
+  images?: string[];
+  category_id?: string | null;
   tag: string | null;
   stock: Product["stock"];
   size: string;
@@ -193,6 +201,8 @@ function productFromRow(row: ProductRow): Product {
     price: Number(row.price),
     ...(row.old_price === null ? {} : { oldPrice: Number(row.old_price) }),
     image: row.image,
+    images: getProductImages({ image: row.image, images: row.images }),
+    categoryId: row.category_id ?? undefined,
     ...(row.tag === null ? {} : { tag: row.tag }),
     stock: row.stock,
     size: row.size,
@@ -224,6 +234,8 @@ function productToRow(input: ProductInput) {
     price: input.price,
     old_price: input.oldPrice ?? null,
     image: input.image,
+    images: getProductImages(input),
+    category_id: input.categoryId ?? null,
     tag: input.tag ?? null,
     stock: input.stock,
     size: input.size,
@@ -427,27 +439,100 @@ type ListPage = {
   limit: number;
 };
 
+type CategoryRow = Omit<ShopCategory, "sortOrder"> & { sort_order: number };
+
+function categoryFromRow(row: CategoryRow): ShopCategory {
+  const { sort_order, ...category } = row;
+  return { ...category, sortOrder: Number(sort_order) };
+}
+
+export async function listCategories(includeHidden = false): Promise<ShopCategory[]> {
+  let query = db().from("catalog_categories").select("*")
+    .order("sort_order", { ascending: true }).order("id", { ascending: true });
+  if (!includeHidden) query = query.eq("visible", true);
+  const { data, error } = await query;
+  if (error) {
+    // Preserve the existing storefront until the schema migration is applied.
+    if (error.code === "PGRST205" || error.code === "42P01") return defaultCategories;
+    throw error;
+  }
+  return ((data ?? []) as CategoryRow[]).map(categoryFromRow);
+}
+
+export async function saveCategory(input: ShopCategoryInput, id?: string): Promise<ShopCategory> {
+  const { sortOrder, ...fields } = input;
+  const row = { ...fields, sort_order: sortOrder, updated_at: new Date().toISOString() };
+  const client = db();
+  if (id) {
+    const { data: existing, error } = await client.from("catalog_categories").select("target").eq("id", id).maybeSingle();
+    if (error) throw error;
+    if (!existing) throw new StoreNotFoundError("Категория не найдена.");
+    if (existing.target !== input.target) throw new StoreValidationError("Содержимое существующей категории нельзя изменить. Создайте новую категорию и перенесите товары.");
+  }
+  const query = id
+    ? client.from("catalog_categories").update(row).eq("id", id)
+    : client.from("catalog_categories").insert({ id: randomUUID(), ...row });
+  const { data, error } = await query.select("*").maybeSingle();
+  if (error) {
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      throw new StoreValidationError("Сначала примените миграцию 2026-11-25-categories-and-product-images.sql в Supabase.");
+    }
+    throw error;
+  }
+  if (!data) throw new StoreNotFoundError("Категория не найдена.");
+  return categoryFromRow(data as CategoryRow);
+}
+
+export async function deleteCategory(id: string): Promise<void> {
+  const products = await listProducts(true);
+  if (products.some((product) => productCategoryId(product) === id)) {
+    throw new StoreConflictError("В категории есть товары. Сначала перенесите их в другую категорию или удалите.");
+  }
+  const { data, error } = await db().from("catalog_categories").delete().eq("id", id).select("id").maybeSingle();
+  if (error?.code === "23503") throw new StoreConflictError("В категории есть товары. Сначала перенесите их в другую категорию.");
+  if (error) throw error;
+  if (!data) throw new StoreNotFoundError("Категория не найдена.");
+}
+
+async function validateProductCategory(input: ProductInput) {
+  if (input.kind === "builder") { input.categoryId = undefined; return; }
+  input.categoryId ||= productCategoryId({ ...input, id: 0 });
+  const { data, error } = await db().from("catalog_categories").select("target")
+    .eq("id", input.categoryId).maybeSingle();
+  if (error) throw error;
+  if (!data || data.target === "delivery"
+    || (input.kind === "flower" ? data.target !== "flowers" : input.kind !== "catalog" || data.target !== "catalog")) {
+    throw new StoreValidationError("Выберите существующую категорию для этого типа товара.");
+  }
+}
+
 export async function listProducts(
   includeHidden = false,
   page?: ListPage,
 ): Promise<Product[]> {
-  let query = db()
-    .from("products")
-    .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants")
-    .order("sort_order", { ascending: true })
-    .order("id", { ascending: true });
+  const buildQuery = (columns: string) => {
+    let query = db()
+      .from("products")
+      .select(columns)
+      .order("sort_order", { ascending: true })
+      .order("id", { ascending: true });
 
-  if (!includeHidden) query = query.eq("visible", true);
-  if (page) {
-    query = query.range(page.offset, page.offset + page.limit - 1);
+    if (!includeHidden) query = query.eq("visible", true);
+    if (page) query = query.range(page.offset, page.offset + page.limit - 1);
+
+    return query;
+  };
+  const columns = "id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants";
+  let { data, error } = await buildQuery(`${columns},images,category_id`);
+  if (error?.code === "42703") {
+    ({ data, error } = await buildQuery(columns));
   }
-
-  const { data, error } = await query;
   if (error) throw error;
-  return ((data ?? []) as ProductRow[]).map(productFromRow);
+  return ((data ?? []) as unknown as ProductRow[]).map(productFromRow);
 }
 
 export async function createProduct(input: ProductInput): Promise<Product> {
+  await validateProductCategory(input);
   const client = db();
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -462,7 +547,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
     const { data, error } = await client
       .from("products")
       .insert({ id: nextId, ...productToRow(input) })
-      .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants")
+      .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants,images,category_id")
       .single();
 
     if (!error && data) return productFromRow(data as ProductRow);
@@ -473,11 +558,12 @@ export async function createProduct(input: ProductInput): Promise<Product> {
 }
 
 export async function updateProduct(id: number, input: ProductInput): Promise<Product> {
+  await validateProductCategory(input);
   const { data, error } = await db()
     .from("products")
     .update(productToRow(input))
     .eq("id", id)
-    .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants")
+    .select("id,name,subtitle,care,species_info,manufacturer,manufacturer_address,manufacturing_place,importer_info,shelf_life,warranty_info,safe_use,conformity_info,conformity_url,price,old_price,image,tag,stock,size,palette,kind,catalog_category,visible,featured,sort_order,variants,images,category_id")
     .maybeSingle();
 
   if (error) throw error;
@@ -1205,7 +1291,7 @@ export async function createOrder(
       deliveryTime: input.deliveryTime,
       cardText: input.cardText,
       adminNote: "",
-      privacyNoticeVersion: LEGAL_DOCUMENT_VERSION,
+      privacyNoticeVersion: getDocumentVersion(await getSiteContent(), "privacy", LEGAL_DOCUMENT_VERSION),
       offerVersion: input.offerVersion,
       legalAcceptedAt: now,
       items,

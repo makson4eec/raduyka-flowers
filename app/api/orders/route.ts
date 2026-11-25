@@ -20,6 +20,8 @@ import {
   StoreValidationError,
 } from "../../../lib/store";
 import { LEGAL_DOCUMENT_VERSION } from "../../../lib/legal";
+import { getSiteContent } from "../../../lib/content-store";
+import { getDocumentVersion } from "../../../lib/document-version";
 import type { CreateOrderInput } from "../../../lib/types";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +84,7 @@ const orderSchema = z.object({
   useBonus: z.boolean(),
   cardAdded: z.boolean(),
   offerAccepted: z.literal(true),
-  offerVersion: z.literal(LEGAL_DOCUMENT_VERSION),
+  offerVersion: z.string().min(1).max(64),
   items: z.array(z.object({
     productId: z.number().int().positive(),
     quantity: z.number().int().min(1).max(20),
@@ -134,6 +136,10 @@ export async function POST(request: Request) {
     }
 
     const payload = parsed.data;
+    const currentVersion = getDocumentVersion(await getSiteContent(), "offer", LEGAL_DOCUMENT_VERSION);
+    if (payload.offerVersion !== currentVersion) {
+      return noStoreJson({ error: "Условия оферты обновились. Обновите страницу и подтвердите актуальные условия заказа." }, { status: 400 });
+    }
     if (
       payload.deliveryMethod === "delivery"
       && (

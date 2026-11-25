@@ -2,6 +2,17 @@ export type ProductStock = "today" | "few" | "soon";
 export type ProductPalette = "pink" | "white" | "bright" | "green";
 export type ProductKind = "catalog" | "flower" | "builder";
 export type CatalogCategory = "bouquet" | "composition";
+export type ShopCategory = {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  target: "catalog" | "flowers" | "delivery";
+  theme: "cream" | "blush";
+  visible: boolean;
+  sortOrder: number;
+};
+export type ShopCategoryInput = Omit<ShopCategory, "id">;
 export type BouquetSize = "small" | "medium" | "large";
 export type ProductAddOn = "vase" | "sweet";
 export type RecipientType = "self" | "other";
@@ -49,6 +60,9 @@ export type Product = {
   oldPrice?: number;
   image: string;
   tag?: string;
+  /** Up to three gallery photos, including the cover. Older products use image. */
+  images?: string[];
+  categoryId?: string;
   stock: ProductStock;
   size: string;
   palette: ProductPalette;

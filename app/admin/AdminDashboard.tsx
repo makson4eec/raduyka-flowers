@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { readJson, uploadAdminImage } from "../../lib/admin-client";
+import ContentManager from "./ContentManager";
+import CategoryManager from "./CategoryManager";
+import ProductPhotos from "./ProductPhotos";
+import { defaultCategories, productCategoryId, sortCategories } from "../../lib/categories";
+import { getProductImages } from "../../lib/product-images";
 import { optimizedImageSource } from "../../lib/image-assets";
 import {
   bouquetSizeLabel,
@@ -22,9 +28,10 @@ import type {
   PaymentStatus,
   Product,
   ProductVariant,
+  ShopCategory,
 } from "../../lib/types";
 
-type Tab = "products" | "orders";
+type Tab = "products" | "orders" | "categories" | "content";
 type OrderView = "active" | "archive";
 type OrderLiveStatus = "connecting" | "live" | "error";
 type NewOrderNotice = { count: number; orderNumber: string };
@@ -129,37 +136,6 @@ const blankVariant = (
   ...(fallbackPrice && fallbackPrice > 0 ? { price: fallbackPrice } : {}),
   ...(fallbackOldPrice && fallbackOldPrice > 0 ? { oldPrice: fallbackOldPrice } : {}),
 });
-
-async function readJson<T>(response: Response): Promise<T> {
-  if (response.status === 401) {
-    window.location.replace("/admin/login");
-    throw new Error("Сессия завершилась. Перенаправляем на страницу входа.");
-  }
-
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error(
-      response.ok
-        ? "Сервер вернул некорректный ответ."
-        : "Не удалось выполнить действие. Ошибка сервера: " + response.status + ".",
-    );
-  }
-
-  if (!response.ok) {
-    const message = (
-      payload !== null
-      && typeof payload === "object"
-      && "error" in payload
-      && typeof payload.error === "string"
-    )
-      ? payload.error
-      : "Не удалось выполнить действие.";
-    throw new Error(message);
-  }
-  return payload as T;
-}
 
 async function fetchAdminPages<T extends { id: string | number }>(
   path: string,
@@ -606,6 +582,8 @@ export default function AdminDashboard({
   const [tab, setTab] = useState<Tab>("products");
   const [orderView, setOrderView] = useState<OrderView>("active");
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ShopCategory[]>(defaultCategories);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(true);
@@ -675,6 +653,12 @@ export default function AdminDashboard({
     setOrdersLoading(true);
     setOrderLiveStatus("connecting");
 
+    void fetch("/api/admin/categories", { cache: "no-store" })
+      .then((response) => readJson<{ categories: ShopCategory[] }>(response))
+      .then((payload) => setCategories(payload.categories))
+      .catch((cause: unknown) => setLoadError(cause instanceof Error ? cause.message : "Не удалось загрузить категории."))
+      .finally(() => setCategoriesLoading(false));
+
     void fetchAdminPages<Product>("/api/admin/products", "products")
       .then((nextProducts) => {
         setProducts(nextProducts);
@@ -705,6 +689,12 @@ export default function AdminDashboard({
 
   useEffect(() => {
     let active = true;
+
+    void fetch("/api/admin/categories", { cache: "no-store" })
+      .then((response) => readJson<{ categories: ShopCategory[] }>(response))
+      .then((payload) => setCategories(payload.categories))
+      .catch((cause: unknown) => setLoadError(cause instanceof Error ? cause.message : "Не удалось загрузить категории."))
+      .finally(() => setCategoriesLoading(false));
 
     void fetchAdminPages<Product>("/api/admin/products", "products")
       .then((nextProducts) => {
@@ -766,7 +756,7 @@ export default function AdminDashboard({
     };
   }, [refreshOrders]);
 
-  const loading = tab === "products" ? productsLoading : ordersLoading;
+  const loading = tab === "products" ? productsLoading : tab === "categories" ? categoriesLoading : tab === "orders" ? ordersLoading : false;
 
   const activeOrders = useMemo(
     () => orders.filter((order) => !isArchivedOrder(order)),
@@ -790,6 +780,7 @@ export default function AdminDashboard({
       ...base,
       kind,
       catalogCategory,
+      categoryId: kind === "flower" ? "flowers" : catalogCategory,
       sortOrder: nextOrder,
       variants: [],
     });
@@ -806,7 +797,8 @@ export default function AdminDashboard({
       return;
     }
 
-    const productToSave = prepareProductForSave(draft);
+    const prepared = prepareProductForSave(draft);
+    const productToSave = { ...prepared, images: getProductImages(prepared) };
 
     setSavingProduct(true);
     setFormError("");
@@ -885,22 +877,26 @@ export default function AdminDashboard({
     }
   };
 
-  const uploadImage = async (file: File, variantId?: string) => {
+  const uploadImage = async (file: File, variantId?: string, photoIndex = 0) => {
     if (!draft) return;
     setUploading(true);
     setFormError("");
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const response = await fetch("/api/admin/upload", { method: "POST", body: form });
-      const payload = await readJson<{ url: string }>(response);
+      const url = await uploadAdminImage(file);
       setDraft((current) => {
         if (!current) return current;
-        if (!variantId) return { ...current, image: payload.url };
+        if (!variantId) {
+          const cover = current.kind === "flower" ? current.variants[0]?.image || current.image : current.image;
+          const images = getProductImages({ ...current, image: cover });
+          images[photoIndex] = url;
+          return { ...current, image: photoIndex === 0 ? url : current.image, images };
+        }
+        const primary = current.variants[0]?.id === variantId;
         return {
           ...current,
+          ...(primary ? { image: url, images: [url, ...getProductImages(current).slice(1)] } : {}),
           variants: (current.variants ?? []).map((variant) =>
-            variant.id === variantId ? { ...variant, image: payload.url } : variant,
+            variant.id === variantId ? { ...variant, image: url } : variant,
           ),
         };
       });
@@ -941,7 +937,7 @@ export default function AdminDashboard({
       if (index <= 0) return current;
       const [variant] = variants.splice(index, 1);
       variants.unshift(variant);
-      return { ...current, variants };
+      return { ...current, image: variant.image || current.image, images: [variant.image || current.image, ...getProductImages(current).slice(1)], variants };
     });
   };
 
@@ -1004,6 +1000,8 @@ export default function AdminDashboard({
 
         <nav className="admin-tabs" aria-label="Разделы панели">
           <button className={tab === "products" ? "is-active" : ""} onClick={() => setTab("products")}>Товары <b>{products.length}</b></button>
+          <button className={tab === "categories" ? "is-active" : ""} onClick={() => setTab("categories")}>Категории <b>{categories.length}</b></button>
+          <button className={tab === "content" ? "is-active" : ""} onClick={() => setTab("content")}>Информация</button>
           <button className={tab === "orders" ? "is-active" : ""} onClick={() => setTab("orders")}>Заказы <b>{activeOrders.length}</b></button>
         </nav>
 
@@ -1029,6 +1027,10 @@ export default function AdminDashboard({
 
         {loading ? (
           <div className="admin-loading">Загружаем данные…</div>
+        ) : tab === "content" ? (
+          <ContentManager />
+        ) : tab === "categories" ? (
+          <CategoryManager categories={categories} onSaved={(category) => setCategories((current) => sortCategories([...current.filter((c) => c.id !== category.id), category]))} onDeleted={(id) => setCategories((current) => current.filter((c) => c.id !== id))} />
         ) : tab === "products" ? (
           <section className="admin-section">
             <div className="admin-section__head">
@@ -1058,7 +1060,7 @@ export default function AdminDashboard({
                   <div className="admin-product__actions">
                     <button
                       disabled={Boolean(pendingProductActions[product.id])}
-                      onClick={() => { setDraft({ ...product }); setFormError(""); }}
+                      onClick={() => { setDraft({ ...product, categoryId: productCategoryId(product) || undefined }); setFormError(""); }}
                     >
                       Изменить
                     </button>
@@ -1178,42 +1180,18 @@ export default function AdminDashboard({
 
       {draft && (
         <div className="admin-modal" role="dialog" aria-modal="true" aria-label={draft.id ? "Редактирование товара" : "Новый товар"}>
-          <button className="admin-modal__backdrop" aria-label="Закрыть" onClick={() => setDraft(null)} />
+          <button className="admin-modal__backdrop" aria-label="Закрыть" disabled={uploading || savingProduct} onClick={() => setDraft(null)} />
           <section className="admin-product-form">
             <header>
               <div><p>{draft.id ? "Редактирование" : "Новая карточка"}</p><h2>{draft.id ? draft.name : "Добавить товар"}</h2></div>
-              <button aria-label="Закрыть" onClick={() => setDraft(null)}>×</button>
+              <button aria-label="Закрыть" disabled={uploading || savingProduct} onClick={() => setDraft(null)}>×</button>
             </header>
 
-            <div className="admin-image-field">
-              <img
-                src={optimizedImageSource(draft.kind === "flower" && draft.variants.length > 0
-                  ? getVariantImage(draft, draft.variants[0])
-                  : draft.image)}
-                alt="Предпросмотр товара"
-              />
-              {draft.kind === "flower" && draft.variants.length > 0 ? (
-                <div className="admin-image-field__variant-note">
-                  <b>Фото витрины берётся из основного цвета</b>
-                  <small>Чтобы изменить его, загрузите фото в первый цвет ниже или сделайте другой цвет основным.</small>
-                </div>
-              ) : (
-                <label>
-                  {uploading ? "Загружаем…" : "Загрузить свою фотографию"}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    disabled={uploading}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      event.currentTarget.value = "";
-                      if (file) void uploadImage(file);
-                    }}
-                  />
-                </label>
-              )}
-              <small>JPG, PNG или WebP, до 5 МБ</small>
-            </div>
+            <ProductPhotos product={draft} uploading={uploading} onUpload={(file, index) => void uploadImage(file, undefined, index)} onRemove={(index) => setDraft((current) => {
+              if (!current) return current;
+              const cover = current.kind === "flower" ? current.variants[0]?.image || current.image : current.image;
+              return { ...current, images: getProductImages({ ...current, image: cover }).filter((_, i) => i !== index) };
+            })} />
 
             <div className="admin-form-grid">
               <label className="span-2">Название<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Например, Нежное утро" /></label>
@@ -1332,8 +1310,15 @@ export default function AdminDashboard({
               <label>Наличие<select value={draft.stock} onChange={(event) => setDraft({ ...draft, stock: event.target.value as Product["stock"] })}><option value="today">В наличии сегодня</option><option value="few">Осталось мало</option><option value="soon">Скоро поступит</option></select></label>
               {draft.kind !== "flower" && <label>Размер<select value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })}><option value="S">25–30 см</option><option value="M">35–40 см</option><option value="L">45–50 см</option></select></label>}
               <label>Палитра<select value={draft.palette} onChange={(event) => setDraft({ ...draft, palette: event.target.value as Product["palette"] })}><option value="pink">Розовая</option><option value="white">Светлая</option><option value="bright">Яркая</option><option value="green">Зелёная</option></select></label>
-              <label>Тип товара<select value={draft.kind} onChange={(event) => { const nextKind = event.target.value as Product["kind"]; setDraft({ ...draft, kind: nextKind }); }}><option value="catalog">Готовый товар</option><option value="flower">Цветы поштучно</option>{draft.kind === "builder" && <option value="builder">Конструктор</option>}</select></label>
-              {draft.kind === "catalog" && <label>Категория<select value={draft.catalogCategory ?? "bouquet"} onChange={(event) => setDraft({ ...draft, catalogCategory: event.target.value as NonNullable<Product["catalogCategory"]> })}><option value="bouquet">Букет</option><option value="composition">Композиция</option></select></label>}
+              <label>Тип товара<select value={draft.kind} onChange={(event) => { const nextKind = event.target.value as Product["kind"]; setDraft({ ...draft, kind: nextKind, categoryId: nextKind === "flower" ? "flowers" : nextKind === "catalog" ? "bouquet" : undefined }); }}><option value="catalog">Готовый товар</option><option value="flower">Цветы поштучно</option>{draft.kind === "builder" && <option value="builder">Конструктор</option>}</select></label>
+              {draft.kind !== "builder" && <label>Категория<select aria-label="Категория" value={draft.categoryId ?? productCategoryId(draft)} onChange={(event) => {
+                const categoryId = event.target.value;
+                setDraft({ ...draft, categoryId, catalogCategory: categoryId === "composition" ? "composition" : categoryId === "bouquet" ? "bouquet" : draft.catalogCategory });
+              }}>
+                <option value="" disabled>Выберите категорию</option>
+                {categories.filter((c) => c.target === (draft.kind === "flower" ? "flowers" : "catalog")).map((c) => <option key={c.id} value={c.id}>{c.name.replaceAll("\n", " ")}{c.visible ? "" : " (скрыта)"}</option>)}
+              </select></label>}
+
               <label>Порядок<input type="number" min="0" value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} /></label>
               <label className="admin-check"><input type="checkbox" checked={draft.visible} onChange={(event) => setDraft({ ...draft, visible: event.target.checked })} /><span><b>Показывать на витрине</b><small>Можно сохранить товар скрытым</small></span></label>
               <label className="admin-check"><input type="checkbox" checked={draft.featured} onChange={(event) => setDraft({ ...draft, featured: event.target.checked })} /><span><b>Популярный товар</b><small>Для будущих подборок</small></span></label>
@@ -1341,7 +1326,7 @@ export default function AdminDashboard({
 
             {formError && <p className="admin-error" role="alert">{formError}</p>}
             <footer>
-              <button className="admin-secondary" onClick={() => setDraft(null)}>Отмена</button>
+              <button className="admin-secondary" disabled={uploading || savingProduct} onClick={() => setDraft(null)}>Отмена</button>
               <button className="admin-primary" onClick={() => void saveProduct()} disabled={savingProduct || uploading}>
                 {savingProduct ? "Сохраняем…" : "Сохранить товар"}
               </button>

@@ -89,6 +89,7 @@ export function prepareProductForSave(product: Product): Product {
   return {
     ...product,
     image: primary.image || product.image,
+    images: [primary.image || product.image, ...(product.images ?? []).filter((image) => image !== product.image)].slice(0, 3),
     price: primary.price ?? product.price,
     oldPrice: primary.oldPrice,
     variants,
