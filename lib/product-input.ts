@@ -134,7 +134,7 @@ export function parseProduct(value: unknown): ProductInput {
     image,
     ...(Array.isArray(input.images) ? input.images.map(safeImagePath) : []),
   ])].filter(Boolean).slice(0, 3);
-  const categoryId = typeof input.categoryId === "string" && /^[a-z0-9][a-z0-9-]{0,79}$/.test(input.categoryId)
+  const categoryId = typeof input.categoryId === "string" && (input.categoryId === "" || /^[a-z0-9][a-z0-9-]{0,79}$/.test(input.categoryId))
     ? input.categoryId : undefined;
 
   return {

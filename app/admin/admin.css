@@ -1530,6 +1530,7 @@
 .admin-content-selection { margin-bottom: 24px; }
 .admin-content-editor { gap: 18px; }
 .admin-content-editor textarea { min-height: 420px; resize: vertical; padding: 14px; line-height: 1.7; }
+.admin-content-editor .admin-block-text { min-height: 88px; }
 .admin-content-form small { line-height: 1.6; color: #606572; }
 .admin-content-toolbar { display: flex; gap: 12px; flex-wrap: wrap; }
 .admin-content-form footer { margin-top: 24px; }

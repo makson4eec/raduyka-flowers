@@ -35,10 +35,22 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     assertSameOriginMutation(request);
     const { id } = await context.params;
     if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(id)) return noStoreJson({ error: "Некорректная категория." }, { status: 400 });
-    await deleteCategory(id);
+    const replacementId = new URL(request.url).searchParams.get("replacementId") ?? undefined;
+    if (replacementId && !/^[a-z0-9][a-z0-9-]{0,79}$/.test(replacementId)) {
+      return noStoreJson({ error: "Некорректная категория назначения." }, { status: 400 });
+    }
+    try {
+      await deleteCategory(id, replacementId);
+    } finally {
+      // The transfer may succeed before a concurrent write blocks deletion.
+      revalidateTag("products", { expire: 0 });
+    }
     revalidateTag("categories", { expire: 0 });
     return noStoreJson({ ok: true });
   } catch (error) {
+    if (error instanceof StoreValidationError) {
+      return noStoreJson({ error: error.message }, { status: 400 });
+    }
     if (error instanceof StoreConflictError || error instanceof StoreNotFoundError) {
       return noStoreJson({ error: error.message }, { status: error instanceof StoreNotFoundError ? 404 : 409 });
     }

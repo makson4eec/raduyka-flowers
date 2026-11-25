@@ -1,4 +1,5 @@
 import { sellerDetails } from "./legal";
+import type { InfoBlockSectionId, InfoBlockValues } from "./info-blocks";
 
 export type SiteSettings = typeof sellerDetails & {
   address: string;
@@ -8,7 +9,12 @@ export type SiteSettings = typeof sellerDetails & {
   mapEmbedUrl: string;
 };
 export type InfoPage = { title: string; body: string; version?: string };
-export type SiteContent = { settings: SiteSettings; pages: Record<string, InfoPage>; settingsVersion?: string };
+export type SiteContent = {
+  settings: SiteSettings;
+  pages: Record<string, InfoPage>;
+  blocks?: Partial<Record<InfoBlockSectionId, InfoBlockValues>>;
+  settingsVersion?: string;
+};
 export const defaultSettings: SiteSettings = {
   ...sellerDetails,
   address: "Екатеринбург, ул. Библиотечная, 43",

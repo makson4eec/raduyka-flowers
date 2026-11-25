@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { InfoPage, SiteSettings } from "../lib/site-content";
+import type { SiteSettings } from "../lib/site-content";
 import { safeContentHref } from "../lib/info-links";
 import { LEGAL_DOCUMENT_VERSION } from "../lib/legal";
 
@@ -45,8 +45,4 @@ export function InfoBody({ body, settings, version }: { body: string; settings?:
     blocks.push(<p key={key}>{paragraph.map((part, j) => <span key={j}>{j > 0 && <br />}{inline(part)}</span>)}</p>);
   }
   return <div className="info-content">{blocks}</div>;
-}
-
-export function InfoSection({ page, settings, children }: { page?: InfoPage; settings?: SiteSettings; children: ReactNode }) {
-  return page ? <article className="info-page"><h1>{page.title}</h1><InfoBody body={page.body} settings={settings} version={page.version} /></article> : children;
 }

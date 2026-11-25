@@ -202,7 +202,7 @@ function productFromRow(row: ProductRow): Product {
     ...(row.old_price === null ? {} : { oldPrice: Number(row.old_price) }),
     image: row.image,
     images: getProductImages({ image: row.image, images: row.images }),
-    categoryId: row.category_id ?? undefined,
+    categoryId: row.category_id === null ? "" : row.category_id,
     ...(row.tag === null ? {} : { tag: row.tag }),
     stock: row.stock,
     size: row.size,
@@ -235,7 +235,7 @@ function productToRow(input: ProductInput) {
     old_price: input.oldPrice ?? null,
     image: input.image,
     images: getProductImages(input),
-    category_id: input.categoryId ?? null,
+    category_id: input.categoryId || null,
     tag: input.tag ?? null,
     stock: input.stock,
     size: input.size,
@@ -483,12 +483,26 @@ export async function saveCategory(input: ShopCategoryInput, id?: string): Promi
   return categoryFromRow(data as CategoryRow);
 }
 
-export async function deleteCategory(id: string): Promise<void> {
-  const products = await listProducts(true);
-  if (products.some((product) => productCategoryId(product) === id)) {
-    throw new StoreConflictError("В категории есть товары. Сначала перенесите их в другую категорию или удалите.");
+export async function deleteCategory(id: string, replacementId?: string): Promise<void> {
+  const client = db();
+  if (replacementId) {
+    const { data, error } = await client.from("catalog_categories").select("id,target").in("id", [id, replacementId]);
+    if (error) throw error;
+    const source = data.find((category) => category.id === id);
+    const replacement = data.find((category) => category.id === replacementId);
+    if (!source) throw new StoreNotFoundError("Категория не найдена.");
+    if (!replacement || replacementId === id || source.target !== replacement.target || source.target === "delivery") {
+      throw new StoreValidationError("Выберите другую категорию с таким же содержимым.");
+    }
   }
-  const { data, error } = await db().from("catalog_categories").delete().eq("id", id).select("id").maybeSingle();
+  if (replacementId !== undefined) {
+    const { error: moveError } = await client.from("products")
+      .update({ category_id: replacementId || null, updated_at: new Date().toISOString() })
+      .eq("category_id", id);
+    if (moveError?.code === "23503") throw new StoreConflictError("Категория назначения больше недоступна. Выберите другую.");
+    if (moveError) throw moveError;
+  }
+  const { data, error } = await client.from("catalog_categories").delete().eq("id", id).select("id").maybeSingle();
   if (error?.code === "23503") throw new StoreConflictError("В категории есть товары. Сначала перенесите их в другую категорию.");
   if (error) throw error;
   if (!data) throw new StoreNotFoundError("Категория не найдена.");
@@ -496,7 +510,8 @@ export async function deleteCategory(id: string): Promise<void> {
 
 async function validateProductCategory(input: ProductInput) {
   if (input.kind === "builder") { input.categoryId = undefined; return; }
-  input.categoryId ||= productCategoryId({ ...input, id: 0 });
+  input.categoryId ??= productCategoryId({ ...input, id: 0 });
+  if (!input.categoryId) return;
   const { data, error } = await db().from("catalog_categories").select("target")
     .eq("id", input.categoryId).maybeSingle();
   if (error) throw error;

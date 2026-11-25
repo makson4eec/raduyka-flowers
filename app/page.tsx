@@ -11,7 +11,8 @@ import flowersCategoryImage from "../public/images/bouquet-6.webp";
 import compositionCategoryImage from "../public/images/composition-roses.webp";
 import heroBouquetImage from "../public/images/hero-bouquet.webp";
 import { defaultCategories, productCategoryId } from "../lib/categories";
-import { InfoSection } from "../components/InfoContent";
+import { InfoBody } from "../components/InfoContent";
+import { getInfoBlockValues } from "../lib/info-blocks";
 import { defaultSettings, type SiteContent } from "../lib/site-content";
 import { getProductImages } from "../lib/product-images";
 import { getDocumentVersion } from "../lib/document-version";
@@ -262,6 +263,10 @@ function ProductCard({
 export default function Home() {
   const [products, setProducts] = useState<Product[]>(defaultProducts);
   const [siteContent, setSiteContent] = useState<SiteContent>({ settings: defaultSettings, pages: {} });
+  const home = getInfoBlockValues("blocks-home", siteContent.blocks?.["blocks-home"]);
+  const delivery = getInfoBlockValues("blocks-delivery", siteContent.blocks?.["blocks-delivery"]);
+  const about = getInfoBlockValues("blocks-about", siteContent.blocks?.["blocks-about"]);
+  const occasions = getInfoBlockValues("blocks-occasion", siteContent.blocks?.["blocks-occasion"]);
   const [categories, setCategories] = useState<ShopCategory[]>(defaultCategories);
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [view, setView] = useState<View>("home");
@@ -954,9 +959,9 @@ export default function Home() {
           <>
             <section className="hero section-pad">
               <div className="hero__copy">
-                <p className="eyebrow">Цветы для важных моментов</p>
-                <h1>Букеты, которые<br />говорят за вас</h1>
-                <p className="hero__lead">Соберём авторский букет и согласуем доступные условия и время доставки до оплаты.</p>
+                <p className="eyebrow">{home.heroEyebrow}</p>
+                <h1 className="editable-heading">{home.heroTitle}</h1>
+                <p className="hero__lead">{home.heroText}</p>
                 <div className="hero__actions">
                   <button className="button button--navy" onClick={() => openCatalog()}>Выбрать букет</button>
                   <button className="button button--light" onClick={startBuilder}>Собрать свой</button>
@@ -980,9 +985,9 @@ export default function Home() {
             </section>
 
             <section className="promise-strip section-pad">
-              <div><span className="promise-icon promise-icon--lime">↝</span><b>Доставка по согласованию</b><p>Стоимость и доступное время подтверждаем до оплаты</p></div>
-              <div><span className="promise-icon promise-icon--pink">☆</span><b>Бонусная программа</b><p>Условия начисления и списания опубликованы на сайте</p></div>
-              <div><span className="promise-icon promise-icon--cream">✓</span><b>Согласуем заметные изменения</b><p>Живые цветы могут отличаться оттенком и степенью раскрытия</p></div>
+              <div><span className="promise-icon promise-icon--lime">↝</span><b>{home.deliveryTitle}</b><p>{home.deliveryText}</p></div>
+              <div><span className="promise-icon promise-icon--pink">☆</span><b>{home.bonusTitle}</b><p>{home.bonusText}</p></div>
+              <div><span className="promise-icon promise-icon--cream">✓</span><b>{home.changesTitle}</b><p>{home.changesText}</p></div>
             </section>
 
             <section className="section-pad section-block">
@@ -1021,8 +1026,8 @@ export default function Home() {
               <div className="page-hero__photo"><Image src="/images/flowers-lilies.webp" alt="Белые лилии" fill sizes="(max-width: 900px) 100vw, 50vw" /></div>
               <div className="page-hero__content">
                 <p className="eyebrow">Цветы Радуйки</p>
-                <h1>Цветы поштучно</h1>
-                <p>Выберите нужный сорт, откройте карточку, посмотрите описание и рекомендации по уходу. Цена указана за одну ветку или один цветок.</p>
+                <h1>{activeCategory?.name || "Цветы поштучно"}</h1>
+                <p>{activeCategory?.description || "Выберите нужный сорт, откройте карточку, посмотрите описание и рекомендации по уходу. Цена указана за одну ветку или один цветок."}</p>
               </div>
               <div className="flowers-hero__note">
                 <strong>{flowerProducts.length}</strong>
@@ -1201,38 +1206,41 @@ export default function Home() {
 
         {view === "occasion" && (
           <section className="section-pad page-section">
-            <InfoSection page={siteContent.pages.occasion} settings={siteContent.settings}>
-            <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><Image src="/images/bouquet-1.webp" alt="Яркий букет гербер" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Когда важны правильные слова</p><h1>Выберите повод —<br />мы подберём настроение</h1><p>Подсказки флористов для тех случаев, когда хочется порадовать, но сложно решить как.</p></div></div>
+            <div className="page-hero page-hero--cream page-hero--media"><div className="page-hero__photo"><Image src="/images/bouquet-1.webp" alt="Яркий букет гербер" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">{occasions.eyebrow}</p><h1 className="editable-heading">{siteContent.pages.occasion?.title ?? occasions.title}</h1><p>{occasions.intro}</p></div></div>
+            {siteContent.pages.occasion && <div className="info-page"><InfoBody body={siteContent.pages.occasion.body} settings={siteContent.settings} /></div>}
             <div className="occasion-grid">{[
-              ["День рождения", "Ярко, празднично и с вау-эффектом", "01"],
-              ["Для любимого человека", "Тепло, лично и без лишней слащавости", "02"],
-              ["Спасибо", "Лёгкий знак внимания, который запомнят", "03"],
-              ["Важное событие", "Сдержанно, благородно и торжественно", "04"],
-              ["Просто так", "Потому что лучший повод — его отсутствие", "05"],
-              ["Не знаю, что выбрать", "Ответьте на один вопрос — поможем", "06"],
-            ].map(([title,text,index], i) => <button key={title} className={i === 5 ? "occasion-card occasion-card--lime" : "occasion-card"} onClick={() => { if (i === 5) { setGiftOpen(true); } else { openCatalog(i === 1 ? "Нежные" : i === 2 ? "До 4 000 ₽" : "Все"); } }}><span>{index}</span><h3>{title}</h3><p>{text}</p><Icon name="arrow" /></button>)}</div>
-            <div className="reminder-banner"><div><Icon name="gift" /></div><section><p className="eyebrow">Больше не забывать</p><h2>Напомним о важных датах</h2><p>Сохраняйте события в личном кабинете и получайте напоминания заранее.</p></section><Link className="button button--navy" href="/account?new=1">Добавить дату</Link></div>
-          </InfoSection>
+              [occasions.occasion1Title, occasions.occasion1Text, "01"],
+              [occasions.occasion2Title, occasions.occasion2Text, "02"],
+              [occasions.occasion3Title, occasions.occasion3Text, "03"],
+              [occasions.occasion4Title, occasions.occasion4Text, "04"],
+              [occasions.occasion5Title, occasions.occasion5Text, "05"],
+              [occasions.occasion6Title, occasions.occasion6Text, "06"],
+            ].map(([title,text,index], i) => <button key={index} className={i === 5 ? "occasion-card occasion-card--lime" : "occasion-card"} onClick={() => { if (i === 5) { setGiftOpen(true); } else { openCatalog(i === 1 ? "Нежные" : i === 2 ? "До 4 000 ₽" : "Все"); } }}><span>{index}</span><h3>{title}</h3><p>{text}</p><Icon name="arrow" /></button>)}</div>
+            <div className="reminder-banner"><div><Icon name="gift" /></div><section><p className="eyebrow">{occasions.reminderEyebrow}</p><h2>{occasions.reminderTitle}</h2><p>{occasions.reminderText}</p></section><Link className="button button--navy" href="/account?new=1">Добавить дату</Link></div>
           </section>
         )}
 
         {view === "delivery" && (
           <section className="section-pad page-section">
-            <InfoSection page={siteContent.pages.delivery} settings={siteContent.settings}>
-            <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><Image src="/images/bouquet-5.webp" alt="Свежие гортензии" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">Бережно и по адресу</p><h1>Доставка через Яндекс</h1><p>Заказ передаём в Яндекс Доставку. Стоимость зависит от адреса и подтверждается до оплаты.</p><div className="delivery-route"><span>Студия</span><i /><span>Яндекс</span><i /><span>Получатель</span></div></div></div>
-            <div className="delivery-grid"><article><span>01</span><h3>По тарифу сервиса</h3><strong>После адреса</strong><p>Яндекс Доставка рассчитает стоимость после проверки указанного адреса.</p></article><article><span>02</span><h3>Согласуем заранее</h3><strong>До оплаты</strong><p>Сообщим итоговую стоимость доставки вместе с подтверждением заказа.</p></article><article><span>03</span><h3>Самовывоз</h3><strong>Бесплатно</strong><p>{siteContent.settings.address}. Сообщим, когда заказ будет готов.</p></article></div>
+            <div className="page-hero page-hero--lime page-hero--media delivery-hero"><div className="page-hero__photo"><Image src="/images/bouquet-5.webp" alt="Свежие гортензии" fill sizes="(max-width: 900px) 100vw, 50vw" /></div><div className="page-hero__content"><p className="eyebrow">{delivery.eyebrow}</p><h1>{siteContent.pages.delivery?.title ?? delivery.title}</h1><p>{delivery.intro}</p><div className="delivery-route"><span>Студия</span><i /><span>{delivery.carrier}</span><i /><span>Получатель</span></div></div></div>
+            {siteContent.pages.delivery && <div className="info-page"><InfoBody body={siteContent.pages.delivery.body} settings={siteContent.settings} /></div>}
+            <div className="delivery-grid">
+              <article><span>01</span><h3>{delivery.tariffTitle}</h3><strong>{delivery.tariffNote}</strong><p>{delivery.tariffText}</p></article>
+              <article><span>02</span><h3>{delivery.confirmationTitle}</h3><strong>{delivery.confirmationNote}</strong><p>{delivery.confirmationText}</p></article>
+              <article><span>03</span><h3>{delivery.pickupTitle}</h3><strong>{delivery.pickupNote}</strong><p>{siteContent.settings.address && `${siteContent.settings.address}. `}{delivery.pickupText}</p></article>
+            </div>
             <section className="studio-location" aria-labelledby="studio-location-title">
               <div className="studio-location__copy">
-                <p className="eyebrow">Самовывоз и контакты</p>
-                <h2 id="studio-location-title">Наша студия</h2>
+                <p className="eyebrow">{delivery.studioEyebrow}</p>
+                <h2 id="studio-location-title">{delivery.studioTitle}</h2>
                 <address>{siteContent.settings.address}</address>
                 <div className="studio-hours" aria-label="Время работы">
                   <div><span>Понедельник — пятница</span><b>{siteContent.settings.hoursWeekdays.replace(/^Пн–Пт:\s*/, "")}</b></div>
                   <div><span>Суббота — воскресенье</span><b>{siteContent.settings.hoursWeekend.replace(/^Сб–Вс:\s*/, "")}</b></div>
                 </div>
-                <a className="studio-location__link" href={siteContent.settings.mapLink} target="_blank" rel="noreferrer">Открыть в Яндекс Картах ↗</a>
+                {siteContent.settings.mapLink && <a className="studio-location__link" href={siteContent.settings.mapLink} target="_blank" rel="noreferrer">Открыть в Яндекс Картах ↗</a>}
               </div>
-              <div className="studio-location__map">
+              {siteContent.settings.mapEmbedUrl && <div className="studio-location__map">
                 {mapLoaded ? (
                   <iframe
                     src={siteContent.settings.mapEmbedUrl}
@@ -1249,21 +1257,21 @@ export default function Home() {
                     <button className="button button--navy" type="button" onClick={() => setMapLoaded(true)}>Показать карту</button>
                   </div>
                 )}
-              </div>
+              </div>}
             </section>
-            <div className="how-delivery"><div><p className="eyebrow">Как всё происходит</p><h2>От оформления до передачи заказа</h2></div><ol><li><span>1</span><div><b>Вы оформляете заказ</b><p>Указываете только необходимые для исполнения заказа данные.</p></div></li><li><span>2</span><div><b>Сотрудник подтверждает условия</b><p>Проверяет состав, наличие и, при доставке, сообщает её стоимость до оплаты.</p></div></li><li><span>3</span><div><b>Заказ передаётся получателю</b><p>После подтверждения и оплаты заказ передаётся выбранным способом.</p></div></li></ol></div>
-            <div className="faq"><h2>Частые вопросы</h2>{["Можно доставить, если я не знаю точный адрес?", "Получатель увидит стоимость?", "Что будет, если получателя нет на месте?"].map((item, index) => <details key={item} open={index === 0}><summary>{item}</summary><p>{index === 0 ? "Да. Укажите телефон — мы аккуратно уточним удобное место и время, не раскрывая сюрприз." : "Менеджер свяжется с вами и согласует следующий шаг. Все детали заказа остаются у отправителя."}</p></details>)}</div>
-          </InfoSection>
+            <div className="how-delivery"><div><p className="eyebrow">{delivery.stepsEyebrow}</p><h2>{delivery.stepsTitle}</h2></div><ol>
+              {[[delivery.step1Title, delivery.step1Text], [delivery.step2Title, delivery.step2Text], [delivery.step3Title, delivery.step3Text]].map(([title, description], index) => <li key={index}><span>{index + 1}</span><div><b>{title}</b><p>{description}</p></div></li>)}
+            </ol></div>
+            <div className="faq"><h2>{delivery.faqTitle}</h2>{[[delivery.faq1Question, delivery.faq1Answer], [delivery.faq2Question, delivery.faq2Answer], [delivery.faq3Question, delivery.faq3Answer]].map(([question, answer], index) => question && <details key={index} open={index === 0}><summary>{question}</summary><p>{answer}</p></details>)}</div>
           </section>
         )}
 
         {view === "about" && (
           <section className="section-pad page-section">
-            <InfoSection page={siteContent.pages.about} settings={siteContent.settings}>
-            <div className="about-hero"><div><p className="eyebrow">Радость — в живых деталях</p><h1>Не копируем букеты.<br />Собираем эмоции.</h1><p>«Радуйка» — цветочная студия, где современная флористика встречается с человеческой заботой. Каждый заказ собираем вручную в день доставки.</p></div><Image src="/images/florist-workshop.webp" alt="Работа флориста Радуйки" width={1271} height={1237} sizes="(max-width: 900px) 100vw, 55vw" /></div>
-            <div className="values-grid"><article><span>01</span><h3>Живые цветы</h3><p>Оттенок, размер и степень раскрытия бутонов естественно различаются. Это учитываем при сборке.</p></article><article><span>02</span><h3>Сохраняем характер</h3><p>При допустимых природных отличиях ориентируемся на выбранную палитру, объём и общий образ букета.</p></article><article><span>03</span><h3>Согласуем существенное</h3><p>Заметные замены состава или изменение стоимости подтверждаем с покупателем до оплаты или передачи заказа.</p></article></div>
-            <div className="team-note"><div className="team-note__number">12</div><div><p className="eyebrow">Флористов и курьеров</p><h2>Одна команда, которая отвечает за результат</h2><p>От первого сообщения до вручения букета у заказа есть конкретные люди, а не безымянный конвейер.</p></div><button className="button button--light" onClick={() => openCatalog()}>Выбрать букет</button></div>
-          </InfoSection>
+            <div className="about-hero"><div><p className="eyebrow">{about.eyebrow}</p><h1 className="editable-heading">{siteContent.pages.about?.title ?? about.title}</h1><p>{about.intro}</p></div><Image src="/images/florist-workshop.webp" alt="Работа флориста Радуйки" width={1271} height={1237} sizes="(max-width: 900px) 100vw, 55vw" /></div>
+            {siteContent.pages.about && <div className="info-page"><InfoBody body={siteContent.pages.about.body} settings={siteContent.settings} /></div>}
+            <div className="values-grid">{[[about.value1Title, about.value1Text], [about.value2Title, about.value2Text], [about.value3Title, about.value3Text]].map(([title, text], index) => <article key={index}><span>{String(index + 1).padStart(2, "0")}</span><h3>{title}</h3><p>{text}</p></article>)}</div>
+            <div className="team-note"><div className="team-note__number">{about.teamNumber}</div><div><p className="eyebrow">{about.teamEyebrow}</p><h2>{about.teamTitle}</h2><p>{about.teamText}</p></div><button className="button button--light" onClick={() => openCatalog()}>Выбрать букет</button></div>
           </section>
         )}
 

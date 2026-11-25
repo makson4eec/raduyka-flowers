@@ -769,6 +769,14 @@ export default function AdminDashboard({
     [orders],
   );
   const displayedOrders = orderView === "active" ? activeOrders : archivedOrders;
+  const productCountsByCategory = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const product of products) {
+      const id = productCategoryId(product);
+      if (id) counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  }, [products]);
 
   const openNewProduct = (
     kind: "catalog" | "flower",
@@ -776,11 +784,12 @@ export default function AdminDashboard({
   ) => {
     const nextOrder = products.reduce((max, product) => Math.max(max, product.sortOrder), 0) + 10;
     const base = blankProduct();
+    const preferredCategory = kind === "flower" ? "flowers" : catalogCategory;
     setDraft({
       ...base,
       kind,
       catalogCategory,
-      categoryId: kind === "flower" ? "flowers" : catalogCategory,
+      categoryId: categories.some((category) => category.id === preferredCategory) ? preferredCategory : "",
       sortOrder: nextOrder,
       variants: [],
     });
@@ -1030,7 +1039,15 @@ export default function AdminDashboard({
         ) : tab === "content" ? (
           <ContentManager />
         ) : tab === "categories" ? (
-          <CategoryManager categories={categories} onSaved={(category) => setCategories((current) => sortCategories([...current.filter((c) => c.id !== category.id), category]))} onDeleted={(id) => setCategories((current) => current.filter((c) => c.id !== id))} />
+          <CategoryManager
+            categories={categories}
+            productCounts={productCountsByCategory}
+            onSaved={(category) => setCategories((current) => sortCategories([...current.filter((c) => c.id !== category.id), category]))}
+            onDeleted={(id, replacementId) => {
+              setCategories((current) => current.filter((category) => category.id !== id));
+              setProducts((current) => current.map((product) => productCategoryId(product) === id ? { ...product, categoryId: replacementId } : product));
+            }}
+          />
         ) : tab === "products" ? (
           <section className="admin-section">
             <div className="admin-section__head">
@@ -1042,12 +1059,13 @@ export default function AdminDashboard({
                 const primaryVariant = product.kind === "flower" ? getPrimaryVariant(product) : undefined;
                 const adminImage = getVariantImage(product, primaryVariant);
                 const adminPrice = getVariantPrice(product, primaryVariant);
+                const categoryName = categories.find((category) => category.id === productCategoryId(product))?.name;
                 return (
                 <article className={"admin-product " + (!product.visible ? "is-hidden" : "")} key={product.id}>
                   <img src={optimizedImageSource(adminImage)} alt={product.name} />
                   <div className="admin-product__main">
                     <div className="admin-product__badges">
-                      <span>{product.kind === "builder" ? "Конструктор" : product.kind === "flower" ? "Цветы" : product.catalogCategory === "composition" ? "Композиция" : "Букет"}</span>
+                      <span>{product.kind === "builder" ? "Конструктор" : categoryName ? categoryName.replaceAll("\n", " ") : "Без категории"}</span>
                       <span className={product.visible ? "is-visible" : "is-muted"}>{product.visible ? "На витрине" : "Скрыт"}</span>
                     </div>
                     <h3>{product.name}</h3>
@@ -1060,7 +1078,7 @@ export default function AdminDashboard({
                   <div className="admin-product__actions">
                     <button
                       disabled={Boolean(pendingProductActions[product.id])}
-                      onClick={() => { setDraft({ ...product, categoryId: productCategoryId(product) || undefined }); setFormError(""); }}
+                      onClick={() => { setDraft({ ...product, categoryId: productCategoryId(product) }); setFormError(""); }}
                     >
                       Изменить
                     </button>
@@ -1310,12 +1328,16 @@ export default function AdminDashboard({
               <label>Наличие<select value={draft.stock} onChange={(event) => setDraft({ ...draft, stock: event.target.value as Product["stock"] })}><option value="today">В наличии сегодня</option><option value="few">Осталось мало</option><option value="soon">Скоро поступит</option></select></label>
               {draft.kind !== "flower" && <label>Размер<select value={draft.size} onChange={(event) => setDraft({ ...draft, size: event.target.value })}><option value="S">25–30 см</option><option value="M">35–40 см</option><option value="L">45–50 см</option></select></label>}
               <label>Палитра<select value={draft.palette} onChange={(event) => setDraft({ ...draft, palette: event.target.value as Product["palette"] })}><option value="pink">Розовая</option><option value="white">Светлая</option><option value="bright">Яркая</option><option value="green">Зелёная</option></select></label>
-              <label>Тип товара<select value={draft.kind} onChange={(event) => { const nextKind = event.target.value as Product["kind"]; setDraft({ ...draft, kind: nextKind, categoryId: nextKind === "flower" ? "flowers" : nextKind === "catalog" ? "bouquet" : undefined }); }}><option value="catalog">Готовый товар</option><option value="flower">Цветы поштучно</option>{draft.kind === "builder" && <option value="builder">Конструктор</option>}</select></label>
+              <label>Тип товара<select value={draft.kind} onChange={(event) => {
+                const kind = event.target.value as Product["kind"];
+                const categoryId = categories.find((category) => category.target === (kind === "flower" ? "flowers" : kind))?.id ?? "";
+                setDraft({ ...draft, kind, categoryId });
+              }}><option value="catalog">Готовый товар</option><option value="flower">Цветы поштучно</option>{draft.kind === "builder" && <option value="builder">Конструктор</option>}</select></label>
               {draft.kind !== "builder" && <label>Категория<select aria-label="Категория" value={draft.categoryId ?? productCategoryId(draft)} onChange={(event) => {
                 const categoryId = event.target.value;
                 setDraft({ ...draft, categoryId, catalogCategory: categoryId === "composition" ? "composition" : categoryId === "bouquet" ? "bouquet" : draft.catalogCategory });
               }}>
-                <option value="" disabled>Выберите категорию</option>
+                <option value="">Без категории</option>
                 {categories.filter((c) => c.target === (draft.kind === "flower" ? "flowers" : "catalog")).map((c) => <option key={c.id} value={c.id}>{c.name.replaceAll("\n", " ")}{c.visible ? "" : " (скрыта)"}</option>)}
               </select></label>}
 

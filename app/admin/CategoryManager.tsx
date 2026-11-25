@@ -7,12 +7,15 @@ import { readJson, uploadAdminImage } from "../../lib/admin-client";
 import { optimizedImageSource } from "../../lib/image-assets";
 import type { ShopCategory } from "../../lib/types";
 
-export default function CategoryManager({ categories, onSaved, onDeleted }: {
+export default function CategoryManager({ categories, productCounts, onSaved, onDeleted }: {
   categories: ShopCategory[];
+  productCounts: Record<string, number>;
   onSaved: (category: ShopCategory) => void;
-  onDeleted: (id: string) => void;
+  onDeleted: (id: string, replacementId: string) => void;
 }) {
   const [draft, setDraft] = useState<ShopCategory | null>(null);
+  const [deleting, setDeleting] = useState<ShopCategory | null>(null);
+  const [replacementId, setReplacementId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const close = () => { if (!busy) { setDraft(null); setError(""); } };
@@ -34,13 +37,15 @@ export default function CategoryManager({ categories, onSaved, onDeleted }: {
     finally { setBusy(false); }
   };
 
-  const remove = async (category: ShopCategory) => {
-    if (!window.confirm(`Удалить категорию «${category.name.replaceAll("\n", " ")}»? Сначала перенесите её товары в другую категорию.`)) return;
+  const remove = async () => {
+    if (!deleting || busy) return;
     setBusy(true);
     setError("");
     try {
-      await readJson(await fetch(`/api/admin/categories/${category.id}`, { method: "DELETE" }));
-      onDeleted(category.id);
+      const search = new URLSearchParams({ replacementId });
+      await readJson(await fetch(`/api/admin/categories/${deleting.id}?${search}`, { method: "DELETE" }));
+      onDeleted(deleting.id, replacementId);
+      setDeleting(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Не удалось удалить категорию."); }
     finally { setBusy(false); }
   };
@@ -54,20 +59,41 @@ export default function CategoryManager({ categories, onSaved, onDeleted }: {
           setDraft({ id: "", name: "", description: "", image: "", target: "catalog", theme: "cream", visible: true, sortOrder: Math.max(0, ...categories.map((c) => c.sortOrder)) + 10 });
         }}>＋ Добавить категорию</button>
       </div>
-      {error && !draft && <p className="admin-error" role="alert">{error}</p>}
+      {error && !draft && !deleting && <p className="admin-error" role="alert">{error}</p>}
       <div className="admin-products">
         {categories.map((category) => (
           <article key={category.id} className={`admin-product ${category.visible ? "" : "is-hidden"}`}>
             <Image unoptimized width={180} height={150} src={optimizedImageSource(category.image)} alt={category.name} />
-            <div className="admin-product__main"><h3>{category.name}</h3><p>{category.description}</p><small>{category.visible ? "На витрине" : "Скрыта"} · Порядок: {category.sortOrder}</small></div>
+            <div className="admin-product__main"><h3>{category.name}</h3><p>{category.description}</p><small>{category.visible ? "На витрине" : "Скрыта"} · Товаров: {productCounts[category.id] ?? 0} · Порядок: {category.sortOrder}</small></div>
             <div className="admin-product__actions">
               <button disabled={busy} onClick={() => { setDraft({ ...category }); setError(""); }}>Изменить</button>
-              <button className="is-danger" disabled={busy} onClick={() => void remove(category)}>Удалить</button>
+              <button className="is-danger" disabled={busy} onClick={() => {
+                setError("");
+                setReplacementId("");
+                setDeleting(category);
+              }}>Удалить</button>
             </div>
           </article>
         ))}
         {!categories.length && <p>Категорий пока нет. Добавьте первую категорию.</p>}
       </div>
+      {deleting && <div className="admin-modal" role="dialog" aria-modal="true" aria-label="Удаление категории">
+        <button className="admin-modal__backdrop" aria-label="Закрыть" disabled={busy} onClick={() => setDeleting(null)} />
+        <form className="admin-product-form" onSubmit={(event) => { event.preventDefault(); void remove(); }}>
+          <header><div><p>Удаление категории</p><h2>{deleting.name}</h2></div><button type="button" disabled={busy} aria-label="Закрыть" onClick={() => setDeleting(null)}>×</button></header>
+          <p>Товары сохранятся. Их можно перенести в другую категорию или оставить в общем каталоге.</p>
+          {deleting.target !== "delivery" && <div className="admin-form-grid">
+            <label className="span-2">Что сделать с товарами<select aria-label="Что сделать с товарами" value={replacementId} disabled={busy} onChange={(event) => setReplacementId(event.target.value)}>
+              <option value="">Оставить без категории</option>
+              {categories.filter((category) => category.id !== deleting.id && category.target === deleting.target).map((category) => (
+                <option key={category.id} value={category.id}>{category.name.replaceAll("\n", " ")}</option>
+              ))}
+            </select></label>
+          </div>}
+          {error && <p className="admin-error" role="alert">{error}</p>}
+          <footer><button className="admin-secondary" type="button" disabled={busy} onClick={() => setDeleting(null)}>Отмена</button><button className="admin-primary" disabled={busy}>{busy ? "Удаляем…" : "Удалить категорию"}</button></footer>
+        </form>
+      </div>}
       {draft && <div className="admin-modal" role="dialog" aria-modal="true" aria-label={draft.id ? "Редактирование категории" : "Новая категория"}>
         <button className="admin-modal__backdrop" aria-label="Закрыть" disabled={busy} onClick={close} />
         <form className="admin-product-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>

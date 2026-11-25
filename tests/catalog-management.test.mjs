@@ -36,6 +36,13 @@ test("custom category IDs survive saving and malformed IDs are rejected", () => 
   assert.equal(productCategoryId({ ...base, categoryId: "wedding-flowers" }), "wedding-flowers");
 });
 
+test("a product left without a category does not fall back to the deleted category", () => {
+  const product = parseProduct({ ...base, categoryId: "" });
+  assert.equal(product.categoryId, "");
+  assert.equal(productCategoryId({ ...product, id: base.id }), "");
+  assert.equal(productCategoryId(base), "bouquet");
+});
+
 test("legacy bouquets, compositions, balloons and flowers keep their categories", () => {
   assert.equal(productCategoryId(base), "bouquet");
   assert.equal(productCategoryId({ ...base, name: "Цветочная композиция" }), "composition");

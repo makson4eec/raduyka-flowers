@@ -4715,6 +4715,7 @@ details p {
   .product-legal-info__grid p { grid-template-columns: 1fr; gap: 2px; }
 }
 .info-page { max-width: 980px; margin: 0 auto; }
+.editable-heading { white-space: pre-line; overflow-wrap: anywhere; }
 .info-page h1 { margin-bottom: 28px; }
 .info-content { overflow-wrap: anywhere; }
 .info-content h2 { margin: 30px 0 16px; font-size: clamp(1.5rem, 3vw, 2.5rem); }

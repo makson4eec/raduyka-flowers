@@ -4,8 +4,21 @@ import test from "node:test";
 import { parseInfoPage, parseSiteSettings, settingFields } from "../lib/content-input.ts";
 import { safeContentHref } from "../lib/info-links.ts";
 import { getDocumentVersion } from "../lib/document-version.ts";
+import { getInfoBlockValues, parseInfoBlockValues } from "../lib/info-blocks.ts";
 
 const settings = Object.fromEntries(settingFields.map((key) => [key, ""]));
+
+test("editing a delivery answer preserves the other delivery and pickup blocks", () => {
+  const fields = parseInfoBlockValues("blocks-delivery", { faq1Answer: "  Новый ответ  ", faq2Question: "" });
+  const delivery = getInfoBlockValues("blocks-delivery", fields);
+  assert.equal(delivery.faq1Answer, "Новый ответ");
+  assert.equal(delivery.faq2Question, "");
+  assert.equal(delivery.studioTitle, "Наша студия");
+  assert.equal(delivery.pickupTitle, "Самовывоз");
+  assert.equal(getInfoBlockValues("blocks-about").teamNumber, "12");
+  assert.throws(() => parseInfoBlockValues("blocks-delivery", { teamNumber: "5" }));
+  assert.throws(() => parseInfoBlockValues("blocks-delivery", { faq1Answer: ["не строка"] }));
+});
 
 test("editing a document or interpolated seller information advances its accepted version", () => {
   const pages = { offer: { title: "Оферта", body: "Текст", version: "2026-11-25T10:00:00.000Z" } };

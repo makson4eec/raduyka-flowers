@@ -9,7 +9,7 @@ export const defaultCategories: ShopCategory[] = [
 ];
 
 export function productCategoryId(product: Product): string {
-  if (product.categoryId) return product.categoryId;
+  if (product.categoryId !== undefined) return product.categoryId;
   if (product.kind === "flower") return "flowers";
   if (product.kind === "builder") return "";
   if (/(?:^|[^а-яё])шар(?:ы|ов|а|ами)?(?:$|[^а-яё])/iu.test(`${product.name} ${product.subtitle}`)) return "balloons";
